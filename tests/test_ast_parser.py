@@ -140,3 +140,146 @@ token = os.environ["TOKEN"]
 """)
     result = analyze_file(script, tmp_path)
     assert set(result.secrets) == {"API_KEY", "SECRET", "TOKEN"}
+
+
+# --- Gap 4: file_io false positive tests ---
+
+
+def test_file_io_pathlib_still_detected(tmp_path):
+    script = tmp_path / "pathlib_io.py"
+    script.write_text("from pathlib import Path\ndata = Path('f.txt').read_text()\n")
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert len(io_steps) >= 1
+
+
+def test_file_io_no_false_positive_on_loads(tmp_path):
+    """myobj.loads() on non-module object should NOT be file_io."""
+    script = tmp_path / "noio.py"
+    script.write_text('result = myobj.loads("data")\n')
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert io_steps == [], f"False positive file_io: {io_steps}"
+
+
+def test_json_dump_still_file_io(tmp_path):
+    script = tmp_path / "jsonio.py"
+    script.write_text("import json\njson.dump(data, f)\n")
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert len(io_steps) >= 1
+
+
+# --- Gap 1: transform detection tests ---
+
+
+def test_transform_list_comprehension(tmp_path):
+    script = tmp_path / "comp.py"
+    script.write_text("items = [x * 2 for x in range(10)]\n")
+    result = analyze_file(script, tmp_path)
+    transform_steps = [s for s in result.steps if s.type == "transform"]
+    assert len(transform_steps) >= 1
+    assert any("list comprehension:" in s.description for s in transform_steps)
+
+
+def test_transform_dict_comprehension(tmp_path):
+    script = tmp_path / "dictcomp.py"
+    script.write_text("d = {k: v for k, v in items}\n")
+    result = analyze_file(script, tmp_path)
+    assert any(s.type == "transform" and "dict comprehension:" in s.description for s in result.steps)
+
+
+def test_transform_builtins(tmp_path):
+    script = tmp_path / "builtins.py"
+    script.write_text("x = sorted(items)\ny = len(data)\nz = int(value)\n")
+    result = analyze_file(script, tmp_path)
+    transform_steps = [s for s in result.steps if s.type == "transform"]
+    assert len(transform_steps) >= 3
+    descs = {s.description for s in transform_steps}
+    assert "sorted()" in descs
+    assert "len()" in descs
+    assert "int()" in descs
+
+
+def test_transform_string_methods(tmp_path):
+    script = tmp_path / "strops.py"
+    script.write_text('x = "hello".upper()\ny = data.split(",")\n')
+    result = analyze_file(script, tmp_path)
+    transform_steps = [s for s in result.steps if s.type == "transform"]
+    assert len(transform_steps) >= 2
+
+
+def test_transform_loads_on_unknown_obj(tmp_path):
+    """.loads() on non-module object should be transform, not file_io."""
+    script = tmp_path / "convert.py"
+    script.write_text('result = myobj.loads("data")\n')
+    result = analyze_file(script, tmp_path)
+    transform_steps = [s for s in result.steps if s.type == "transform"]
+    assert len(transform_steps) >= 1
+
+
+# --- Gap 2: inputs/outputs tests ---
+
+
+def test_io_assignment_outputs(tmp_path):
+    """Variable name on left side of = should populate outputs."""
+    script = tmp_path / "assign.py"
+    script.write_text("items = sorted(data)\n")
+    result = analyze_file(script, tmp_path)
+    transform_steps = [s for s in result.steps if s.type == "transform"]
+    assert len(transform_steps) >= 1
+    assert "items" in transform_steps[0].outputs
+
+
+def test_io_open_read_mode(tmp_path):
+    """open('file', 'r') should put file path in inputs."""
+    script = tmp_path / "readfile.py"
+    script.write_text("f = open('data.csv', 'r')\n")
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert len(io_steps) >= 1
+    assert "data.csv" in io_steps[0].inputs
+
+
+def test_io_open_write_mode(tmp_path):
+    """open('file', 'w') should put file path in outputs."""
+    script = tmp_path / "writefile.py"
+    script.write_text("f = open('output.json', 'w')\n")
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert len(io_steps) >= 1
+    assert "output.json" in io_steps[0].outputs
+
+
+def test_io_open_keyword_mode(tmp_path):
+    """open('file', mode='w') keyword form should work too."""
+    script = tmp_path / "kwmode.py"
+    script.write_text("f = open('out.txt', mode='w')\n")
+    result = analyze_file(script, tmp_path)
+    io_steps = [s for s in result.steps if s.type == "file_io"]
+    assert len(io_steps) >= 1
+    assert "out.txt" in io_steps[0].outputs
+
+
+def test_io_decision_inputs(tmp_path):
+    """Decision conditions should extract variable names as inputs."""
+    script = tmp_path / "branch.py"
+    script.write_text("if verbose:\n    print('yes')\n")
+    result = analyze_file(script, tmp_path)
+    decisions = [s for s in result.steps if s.type == "decision"]
+    assert len(decisions) >= 1
+    assert "verbose" in decisions[0].inputs
+
+
+def test_hello_fixture_io(hello_script, fixtures_dir):
+    """hello.py should have populated inputs/outputs where determinable."""
+    result = analyze_file(hello_script, fixtures_dir)
+
+    # Decision steps should have inputs (variable names from conditions)
+    decisions = [s for s in result.steps if s.type == "decision"]
+    assert any(s.inputs for s in decisions), f"No decision inputs: {decisions}"
+
+    # Assignment outputs: e.g. `data = fetch_data(url)` should have outputs=["data"]
+    api_steps = [s for s in result.steps if s.type == "api_call"]
+    # requests.get is inside fetch_data, assigned to `response`
+    assert any(s.outputs for s in api_steps), f"No API call outputs: {api_steps}"

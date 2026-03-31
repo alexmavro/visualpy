@@ -19,10 +19,11 @@ _API_OBJECTS = frozenset({"requests", "httpx", "client", "session", "http", "aio
 
 # Known file I/O functions
 _FILE_IO_NAMES = frozenset({"open"})
-_FILE_IO_METHODS = frozenset({
-    "read_text", "write_text", "read_bytes", "write_bytes",  # pathlib
-    "dump", "dumps", "load", "loads",  # json
-    "reader", "writer", "DictReader", "DictWriter",  # csv
+_SERIALIZATION_METHODS = frozenset({
+    "dump", "load", "reader", "writer", "DictReader", "DictWriter",  # csv/json/etc
+})
+_PATHLIB_IO_METHODS = frozenset({
+    "read_text", "write_text", "read_bytes", "write_bytes",
 })
 _FILE_IO_MODULES = frozenset({"json", "csv", "pickle", "yaml", "toml"})
 
@@ -41,6 +42,19 @@ _DB_OBJECTS = frozenset({
 # Known output functions
 _OUTPUT_NAMES = frozenset({"print"})
 _LOGGING_METHODS = frozenset({"info", "debug", "warning", "error", "critical", "exception"})
+
+# Transform patterns — data reshaping operations
+_TRANSFORM_BUILTINS = frozenset({
+    "sorted", "map", "filter", "zip", "enumerate",
+    "int", "str", "float", "list", "dict", "set", "tuple",
+    "len", "sum", "min", "max",
+})
+_TRANSFORM_METHODS = frozenset({
+    "replace", "split", "join", "strip", "lstrip", "rstrip",
+    "lower", "upper", "title", "encode",
+    "append", "extend",
+    "loads", "dumps",  # data conversion when not on json/csv/etc module
+})
 
 
 def analyze_file(file_path: Path, project_root: Path) -> AnalyzedScript:
@@ -92,6 +106,9 @@ def analyze_file(file_path: Path, project_root: Path) -> AnalyzedScript:
     collector = _StepCollector(services)
     collector.visit(tree)
     steps = sorted(collector.steps, key=lambda s: s.line_number)
+
+    # Enrich steps with inputs/outputs from assignment context
+    _enrich_io(steps, tree)
 
     return AnalyzedScript(
         path=rel_path,
@@ -167,6 +184,110 @@ def _extract_secrets(tree: ast.Module) -> list[str]:
     return sorted(secrets)
 
 
+def _enrich_io(steps: list[Step], tree: ast.Module) -> None:
+    """Post-process steps to populate inputs and outputs from AST context.
+
+    Walks the AST looking for assignments and conditions that correspond
+    to steps (matched by line number), then extracts variable names.
+    """
+    # Build line→step lookup for fast matching
+    step_by_line: dict[int, list[Step]] = {}
+    for step in steps:
+        step_by_line.setdefault(step.line_number, []).append(step)
+
+    for node in ast.walk(tree):
+        # Assignments: `result = func(args)` → outputs=["result"], inputs from args
+        if isinstance(node, ast.Assign):
+            line = node.lineno
+            matched = step_by_line.get(line) or step_by_line.get(node.end_lineno or line)
+            if not matched:
+                # Check if the value spans to a different line
+                if isinstance(node.value, ast.AST) and hasattr(node.value, "lineno"):
+                    matched = step_by_line.get(node.value.lineno)
+            if matched:
+                # Extract output variable names (left side of =)
+                # Note: relies on ast.walk BFS order (parent Assign visited before child Call)
+                out_names = _extract_assign_targets(node.targets)
+                for step in matched:
+                    if not step.outputs:
+                        step.outputs = out_names.copy()
+
+        # For open() calls: extract file path into inputs/outputs
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "open":
+                matched = step_by_line.get(node.lineno)
+                if matched:
+                    for step in matched:
+                        if step.type == "file_io":
+                            path_arg = _extract_first_str_arg(node)
+                            if path_arg:
+                                mode = _extract_open_mode(node)
+                                if mode is None:
+                                    # Can't determine — add to both
+                                    if path_arg not in step.inputs:
+                                        step.inputs.append(path_arg)
+                                    if path_arg not in step.outputs:
+                                        step.outputs.append(path_arg)
+                                elif "w" in mode or "a" in mode:
+                                    if path_arg not in step.outputs:
+                                        step.outputs.append(path_arg)
+                                else:
+                                    if path_arg not in step.inputs:
+                                        step.inputs.append(path_arg)
+
+        # For decisions: extract variable names from conditions as inputs
+        if isinstance(node, (ast.If, ast.While)):
+            matched = step_by_line.get(node.lineno)
+            if matched:
+                var_names = _extract_names(node.test)
+                for step in matched:
+                    if step.type == "decision" and not step.inputs:
+                        step.inputs = var_names
+
+        if isinstance(node, ast.For):
+            matched = step_by_line.get(node.lineno)
+            if matched:
+                var_names = _extract_names(node.iter)
+                for step in matched:
+                    if step.type == "decision" and not step.inputs:
+                        step.inputs = var_names
+
+
+def _extract_assign_targets(targets: list[ast.expr]) -> list[str]:
+    """Extract variable names from assignment targets."""
+    names: list[str] = []
+    for target in targets:
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+        elif isinstance(target, ast.Tuple):
+            for elt in target.elts:
+                if isinstance(elt, ast.Name):
+                    names.append(elt.id)
+    return names
+
+
+def _extract_names(node: ast.AST) -> list[str]:
+    """Extract all Name references from an AST node."""
+    return sorted({n.id for n in ast.walk(node) if isinstance(n, ast.Name)})
+
+
+def _extract_open_mode(node: ast.Call) -> str | None:
+    """Extract the mode argument from an open() call. Returns None if undetermined."""
+    # Positional: open(path, mode)
+    if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
+        return str(node.args[1].value)
+    # Keyword: open(path, mode="w")
+    for kw in node.keywords:
+        if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+            return str(kw.value.value)
+    # No second arg at all → default read mode
+    if len(node.args) < 2 and not any(kw.arg == "mode" for kw in node.keywords):
+        return "r"
+    # Mode is a variable — can't determine statically
+    return None
+
+
 class _StepCollector(ast.NodeVisitor):
     """Walk AST and collect Steps ordered by line number.
 
@@ -212,6 +333,22 @@ class _StepCollector(ast.NodeVisitor):
         self._add_step(node.lineno, "decision", "try/except block")
         self.generic_visit(node)
 
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        elt = _safe_unparse(node.elt)
+        self._add_step(node.lineno, "transform", f"list comprehension: [{elt} for ...]")
+        self.generic_visit(node)
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        key = _safe_unparse(node.key)
+        val = _safe_unparse(node.value)
+        self._add_step(node.lineno, "transform", f"dict comprehension: {{{key}: {val} for ...}}")
+        self.generic_visit(node)
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        elt = _safe_unparse(node.elt)
+        self._add_step(node.lineno, "transform", f"set comprehension: {{{elt} for ...}}")
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         self._classify_call(node)
         self.generic_visit(node)
@@ -233,11 +370,13 @@ class _StepCollector(ast.NodeVisitor):
                 self._add_step(line, "api_call", desc, service=svc)
                 return
 
-            # File I/O: json.dump(), csv.reader(), pathlib methods
-            if method in _FILE_IO_METHODS and obj_name in _FILE_IO_MODULES:
+            # File I/O: json.dump(), csv.reader() (module-guarded)
+            if method in _SERIALIZATION_METHODS and obj_name in _FILE_IO_MODULES:
                 self._add_step(line, "file_io", f"{obj_name}.{method}()")
                 return
-            if method in _FILE_IO_METHODS:
+
+            # File I/O: pathlib .read_text(), .write_text() (always file I/O)
+            if method in _PATHLIB_IO_METHODS:
                 self._add_step(line, "file_io", f".{method}()")
                 return
 
@@ -257,6 +396,11 @@ class _StepCollector(ast.NodeVisitor):
                 self._add_step(line, "api_call", f"{obj_name}.{method}()", service=svc)
                 return
 
+            # Transform: string methods, data conversion (.loads/.dumps on non-module objects)
+            if method in _TRANSFORM_METHODS:
+                self._add_step(line, "transform", f".{method}()")
+                return
+
             return
 
         # --- ast.Name calls: func_name(...) ---
@@ -273,6 +417,11 @@ class _StepCollector(ast.NodeVisitor):
                 path_arg = _extract_first_str_arg(node)
                 desc = f"open({path_arg!r})" if path_arg else "open()"
                 self._add_step(line, "file_io", desc)
+                return
+
+            # Transform builtins: sorted(), map(), int(), len(), etc.
+            if name in _TRANSFORM_BUILTINS:
+                self._add_step(line, "transform", f"{name}()")
                 return
 
             return

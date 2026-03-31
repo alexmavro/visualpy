@@ -86,19 +86,43 @@ def _find_file_io_connections(
 
 
 def _extract_file_paths(script: AnalyzedScript) -> set[str]:
-    """Extract file path strings from file_io steps."""
+    """Extract file path strings from file_io steps.
+
+    Primary: reads from step.inputs and step.outputs (structured data).
+    Fallback: parses open('path') from description strings.
+    """
     paths: set[str] = set()
     for step in script.steps:
         if step.type != "file_io":
             continue
-        desc = step.description
-        # Extract path from open('path') pattern
-        if "open(" in desc:
-            start = desc.find("'")
-            end = desc.rfind("'")
-            if start != -1 and end > start:
-                paths.add(desc[start + 1 : end])
+
+        # Primary: structured inputs/outputs
+        for p in step.inputs:
+            if _looks_like_file_path(p):
+                paths.add(p)
+        for p in step.outputs:
+            if _looks_like_file_path(p):
+                paths.add(p)
+
+        # Fallback: parse from description (for steps without structured data)
+        if not (step.inputs or step.outputs):
+            desc = step.description
+            if "open(" in desc:
+                start = desc.find("'")
+                end = desc.rfind("'")
+                if start != -1 and end > start:
+                    paths.add(desc[start + 1 : end])
+
     return paths
+
+
+def _looks_like_file_path(s: str) -> bool:
+    """Heuristic: does this string look like a file path (has a file extension)?"""
+    if s.startswith("http") or len(s) > 256:
+        return False
+    # Must have a dot followed by 1-6 alphanumeric chars at the end (file extension)
+    parts = s.rsplit(".", 1)
+    return len(parts) == 2 and 1 <= len(parts[1]) <= 6 and parts[1].isalnum()
 
 
 def _find_subprocess_connections(

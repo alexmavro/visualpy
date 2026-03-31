@@ -55,6 +55,19 @@ def test_empty_scripts():
     assert connections == []
 
 
+def test_file_io_connection_via_structured_io(tmp_path):
+    """Cross-file should detect shared files via step.inputs/outputs, not just descriptions."""
+    (tmp_path / "writer.py").write_text("f = open('shared.csv', 'w')\n")
+    (tmp_path / "reader.py").write_text("f = open('shared.csv', 'r')\n")
+
+    scripts = scan_project(tmp_path)
+    connections = resolve_connections(scripts, tmp_path)
+
+    io_conns = [c for c in connections if c.type == "file_io"]
+    assert len(io_conns) >= 1
+    assert any("shared.csv" in c.detail for c in io_conns)
+
+
 def test_deduplication(tmp_path):
     (tmp_path / "utils.py").write_text("def a(): pass\ndef b(): pass\n")
     (tmp_path / "main.py").write_text("from utils import a\nfrom utils import b\n")
