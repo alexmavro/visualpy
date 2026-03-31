@@ -27,7 +27,7 @@ class Step:
     """A single operation within a script."""
 
     line_number: int
-    type: str  # "api_call", "file_io", "transform", "decision", "output"
+    type: str  # "api_call", "file_io", "db_op", "transform", "decision", "output"
     description: str  # "Fetches leads from Google Maps API"
     function_name: str | None = None
     service: Service | None = None
