@@ -1,0 +1,9 @@
+{
+  "webhooks": {
+    "create-proposal": {
+      "directive": "create_proposal_webhook",
+      "description": "Generate PandaDoc proposal and send follow-up email",
+      "tools": ["create_proposal", "send_email", "web_fetch"]
+    }
+  }
+}

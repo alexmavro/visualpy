@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project — session files (never committed)
+CLAUDE.md
+status.md
+docs/PLAN-*.md
+
+# Secrets / runtime
+.env
+*.sqlite
+*.db
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
