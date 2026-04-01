@@ -282,7 +282,7 @@ class TestCallLlm:
         mock_litellm.completion.assert_called_once_with(
             model="test/model",
             messages=[{"role": "user", "content": "test"}],
-            max_tokens=200,
+            max_tokens=2048,
         )
 
 

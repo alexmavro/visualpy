@@ -79,7 +79,7 @@
                 <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">All Steps</h3>
                 <div class="space-y-1">
                     {% for step in script.steps %}
-                    <button onclick="showStepDetail({{ script.path|tojson }}, {{ step.line_number }})"
+                    <button onclick='showStepDetail({{ script.path|tojson }}, {{ step.line_number }})'
                             class="w-full text-left px-3 py-1.5 rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2">
                         <span class="text-gray-400 font-mono w-8 text-right shrink-0">L{{ step.line_number }}</span>
                         <span class="px-1.5 py-0.5 rounded text-xs font-medium
@@ -100,7 +100,7 @@
         </div>
 
         <!-- Sidebar -->
-        <div class="space-y-4">
+        <div class="space-y-4 lg:sticky lg:top-4 lg:self-start">
             <!-- Step detail panel (visible with placeholder by default) -->
             <div id="step-detail" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">Step Detail</h3>
@@ -173,6 +173,7 @@ function showStepDetail(scriptPath, line) {
         return;
     }
     htmx.ajax('GET', '/partials/step/' + encodeURIComponent(scriptPath) + '/' + line, {target: content, swap: 'innerHTML'});
+    document.getElementById('step-detail').scrollIntoView({behavior: 'smooth', block: 'nearest'});
 }
 </script>
 {% endblock %}

@@ -139,7 +139,10 @@ def _call_llm(messages: list[dict], model: str) -> str | None:
         response = litellm.completion(
             model=model,
             messages=messages,
-            max_tokens=200,
+            max_tokens=2048,
+            # Higher than needed for text output (~50 tokens) because some
+            # models (Gemini 2.5) use thinking tokens that count against this
+            # limit. 2048 accommodates thinking overhead comfortably.
             # Omit temperature — lets litellm use each provider's default.
             # Avoids known issues with models that misbehave at low temps.
         )
