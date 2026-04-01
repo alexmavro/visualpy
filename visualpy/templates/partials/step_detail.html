@@ -1,0 +1,64 @@
+{% set type_labels = {
+    "api_call": "API Call",
+    "file_io": "File I/O",
+    "db_op": "Database",
+    "decision": "Decision",
+    "output": "Output",
+    "transform": "Transform",
+} %}
+
+{% set type_colors = {
+    "api_call": "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200",
+    "file_io": "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200",
+    "db_op": "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200",
+    "decision": "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200",
+    "output": "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200",
+    "transform": "bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200",
+} %}
+
+<div class="space-y-3 text-sm">
+    <div class="flex items-center gap-2">
+        <span class="px-2 py-0.5 text-xs font-medium rounded {{ type_colors.get(step.type, 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200') }}">
+            {{ type_labels.get(step.type, step.type) }}
+        </span>
+        <span class="text-gray-400 text-xs">line {{ step.line_number }}</span>
+    </div>
+
+    <p class="font-medium">{{ step.description }}</p>
+
+    {% if step.function_name %}
+    <p class="text-gray-500 dark:text-gray-400">
+        <span class="text-xs uppercase tracking-wide">Function:</span>
+        <span class="font-mono">{{ step.function_name }}()</span>
+    </p>
+    {% endif %}
+
+    {% if step.service %}
+    <p class="text-gray-500 dark:text-gray-400">
+        <span class="text-xs uppercase tracking-wide">Service:</span>
+        {{ step.service.name }} ({{ step.service.library }})
+    </p>
+    {% endif %}
+
+    {% if step.inputs %}
+    <div>
+        <span class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Inputs:</span>
+        <ul class="mt-0.5 space-y-0.5">
+            {% for inp in step.inputs %}
+            <li class="font-mono text-xs">{{ inp }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if step.outputs %}
+    <div>
+        <span class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Outputs:</span>
+        <ul class="mt-0.5 space-y-0.5">
+            {% for out in step.outputs %}
+            <li class="font-mono text-xs">{{ out }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>

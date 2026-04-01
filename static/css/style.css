@@ -1,0 +1,23 @@
+/* visualpy — minimal custom styles (Tailwind handles most things) */
+
+/* Mermaid diagram container */
+.mermaid {
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+}
+
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Smooth transitions for dark mode */
+html {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Active script card highlight */
+a[href]:hover .service-badge {
+    transform: scale(1.05);
+}

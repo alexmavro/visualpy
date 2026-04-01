@@ -48,29 +48,20 @@ def app():
         _run_analyze(args)
 
     if args.command == "serve":
-        print(f"[visualpy] serve is not yet implemented. Target: {args.path}")
-        sys.exit(0)
+        _run_serve(args)
 
 
-def _run_analyze(args: argparse.Namespace) -> None:
-    """Run the analysis pipeline and output JSON."""
-    target = Path(args.path).resolve()
-
-    if not target.exists():
-        print(f"[visualpy] Error: path does not exist: {args.path}", file=sys.stderr)
-        sys.exit(1)
-
+def _build_project(target: Path) -> AnalyzedProject:
+    """Run the full analysis pipeline and return an AnalyzedProject."""
     scripts = scan_project(target)
 
     if not scripts:
-        print(f"[visualpy] No Python files found in: {args.path}", file=sys.stderr)
+        print(f"[visualpy] No Python files found in: {target}", file=sys.stderr)
         sys.exit(1)
 
-    # Resolve cross-file connections
     project_root = target if target.is_dir() else target.parent
     connections = resolve_connections(scripts, project_root)
 
-    # Aggregate project-level data
     all_services = {}
     all_secrets: set[str] = set()
     entry_points: list[str] = []
@@ -82,7 +73,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
         if script.is_entry_point:
             entry_points.append(script.path)
 
-    project = AnalyzedProject(
+    return AnalyzedProject(
         path=str(target),
         scripts=scripts,
         connections=connections,
@@ -91,6 +82,16 @@ def _run_analyze(args: argparse.Namespace) -> None:
         entry_points=sorted(entry_points),
     )
 
+
+def _run_analyze(args: argparse.Namespace) -> None:
+    """Run the analysis pipeline and output JSON."""
+    target = Path(args.path).resolve()
+
+    if not target.exists():
+        print(f"[visualpy] Error: path does not exist: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    project = _build_project(target)
     output = json.dumps(dataclasses.asdict(project), indent=2)
 
     if args.output:
@@ -102,3 +103,36 @@ def _run_analyze(args: argparse.Namespace) -> None:
         print(f"[visualpy] Analysis written to {args.output}")
     else:
         print(output)
+
+
+def _run_serve(args: argparse.Namespace) -> None:
+    """Analyze the target and start the web UI."""
+    import uvicorn
+
+    from visualpy.server import create_app
+
+    target = Path(args.path).resolve()
+
+    if not target.exists():
+        print(f"[visualpy] Error: path does not exist: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"[visualpy] Analyzing {target}...", file=sys.stderr)
+    project = _build_project(target)
+    print(
+        f"[visualpy] Found {len(project.scripts)} scripts, "
+        f"{len(project.connections)} connections",
+        file=sys.stderr,
+    )
+
+    app = create_app(project)
+    print(f"[visualpy] Serving at http://{args.host}:{args.port}", file=sys.stderr)
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    except OSError as exc:
+        print(
+            f"[visualpy] Error: could not start server on {args.host}:{args.port}: {exc}\n"
+            f"[visualpy] Hint: try a different port with --port",
+            file=sys.stderr,
+        )
+        sys.exit(1)

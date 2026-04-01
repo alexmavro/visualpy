@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}visualpy - Error{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+    <h1 class="text-6xl font-bold text-gray-300 dark:text-gray-600 mb-4">{{ code|default(404) }}</h1>
+    <p class="text-lg text-gray-500 dark:text-gray-400 mb-6">{{ message|default("An unexpected error occurred.") }}</p>
+    <a href="/" class="text-blue-600 dark:text-blue-400 hover:underline">Back to overview</a>
+</div>
+{% endblock %}

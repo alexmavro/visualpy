@@ -1,0 +1,47 @@
+{% set type_labels = {
+    "api_call": "API",
+    "file_io": "File",
+    "db_op": "DB",
+    "decision": "Decision",
+    "output": "Output",
+    "transform": "Transform",
+} %}
+
+<a href="/script/{{ script.path }}"
+   class="block bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md hover:ring-1 hover:ring-blue-300 dark:hover:ring-blue-600 transition">
+    <div class="flex items-center justify-between mb-1">
+        <span class="font-medium text-sm truncate" title="{{ script.path }}">{{ script.path.split('/')[-1] }}</span>
+        {% if script.is_entry_point %}
+        <span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded shrink-0 ml-2">entry</span>
+        {% endif %}
+    </div>
+    {% if '/' in script.path %}
+    <p class="text-xs text-gray-400 dark:text-gray-500 truncate mb-1.5" title="{{ script.path }}">{{ script.path }}</p>
+    {% endif %}
+    <div class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+        <span>{{ script.steps|length }} steps</span>
+        {% if script.steps %}
+        <span class="text-gray-300 dark:text-gray-600">|</span>
+        {% set ns = namespace(types=[]) %}
+        {% for step in script.steps %}
+            {% if step.type not in ns.types %}
+                {% set ns.types = ns.types + [step.type] %}
+            {% endif %}
+        {% endfor %}
+        {% for t in ns.types[:4] %}
+        <span class="px-1 py-0.5
+            {% if t == 'api_call' %}bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400
+            {% elif t == 'file_io' %}bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400
+            {% elif t == 'db_op' %}bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400
+            {% elif t == 'decision' %}bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400
+            {% elif t == 'output' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+            {% elif t == 'transform' %}bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400
+            {% endif %}
+            rounded">{{ type_labels.get(t, t) }}</span>
+        {% endfor %}
+        {% endif %}
+        {% for svc in script.services %}
+        <span class="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded">{{ svc.name }}</span>
+        {% endfor %}
+    </div>
+</a>

@@ -29,6 +29,9 @@ visualpy = "visualpy.__main__:main"
 [tool.setuptools.packages.find]
 include = ["visualpy*"]
 
+[tool.setuptools.package-data]
+visualpy = ["templates/**/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
