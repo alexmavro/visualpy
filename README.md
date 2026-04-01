@@ -8,6 +8,8 @@ Auto-visualise Python automations for non-technical stakeholders.
 
 Drop a folder of Python scripts, get a visual breakdown of what they do, how they connect, and what they need. No execution required, no config needed.
 
+**[Live demo](https://visualpy.lexi-energy.com)** — see it in action on a real 8-script lead generation pipeline.
+
 ## Who is this for?
 
 - **Operations teams** who inherited a folder of automation scripts and need to understand what each one does before touching anything.
@@ -23,6 +25,10 @@ pip install -e .
 
 visualpy analyze /path/to/your/scripts      # JSON breakdown
 visualpy serve /path/to/your/scripts         # starts a local web UI
+
+# Optional: add plain-English LLM summaries (needs an API key)
+pip install -e ".[llm]"
+visualpy serve /path/to/your/scripts --summarize
 ```
 
 Requires Python 3.12 or later. No config files, no decorators in your code, no setup. Point it at a folder and go.
@@ -42,6 +48,9 @@ The result is a structured project map, viewable as JSON or as an interactive we
 
 - **Project dependency graph** — see how scripts relate to each other at a glance
 - **Per-script flow diagrams** — step-by-step visual breakdown of what each file does, grouped by function
+- **Compact mode** — large scripts (68+ steps) auto-collapse to readable summaries; toggle between compact and detailed views
+- **LLM summaries** — optional plain-English descriptions powered by any LLM provider via litellm (BYOK). `--summarize` flag on both `analyze` and `serve`
+- **Importance scoring** — scripts sorted by connectivity; most important scripts highlighted with a "key" badge
 - **Service and secret detection** — instantly see which external services and API keys are in play
 - **Entry point detection** — identifies scripts with `if __name__ == "__main__"`, cron triggers, webhooks, and CLI entry points
 - **Dark mode** — toggle between light and dark themes, persisted across sessions
@@ -54,28 +63,21 @@ The result is a structured project map, viewable as JSON or as an interactive we
 | Sprint | Status | What |
 |--------|--------|------|
 | 0: Init | Done | Repo skeleton, models, CLI stubs, test fixtures |
-| 1: The Engine | Done | Folder-to-JSON analysis pipeline, 59 tests |
+| 1: The Engine | Done | Folder-to-JSON analysis pipeline |
 | 1.5: Hardening | Done | Transform detection, inputs/outputs enrichment, false positive fixes |
-| 2: The Face | Done | Web UI with Mermaid.js graphs, dark mode, HTMX interactivity, 140 tests |
+| 2: The Face | Done | Web UI with Mermaid.js graphs, dark mode, HTMX interactivity |
 | 3: The Community | Done | FOSS prep, docs, issue templates, CI |
-| 4: The Voice | Planned | LLM summaries (litellm, BYOK), per-script descriptions, project executive summary |
-| 5: The Feedback Loop | Planned | Annotations, human-in-the-loop corrections |
+| 4: The Voice | Done | LLM summaries (litellm, BYOK), per-script and project-level descriptions |
+| 5: The Scaling Fix | Done | Compact mode, importance scoring, compact/detailed toggle |
+| 5.5: The Demo | Done | Docker deployment, pre-baked summaries, [live demo](https://visualpy.lexi-energy.com) |
+| 6: The Translation | Next | LLM-powered step descriptions, business language UI |
+| 7: The Export | Planned | Static HTML export, summary caching, markdown export |
 
 ## Contributing
 
 We'd love your help — whether it's a bug report, a feature idea, or a question. You don't need to be a developer to contribute.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started. We've written it specifically for people who might be new to open source.
-
-## Acknowledgments
-
-visualpy stands on the shoulders of great open-source projects. We studied their patterns and approaches:
-
-- [pyflowchart](https://github.com/cdfmlr/pyflowchart) (MIT) — function subgraph grouping, AST-to-flowchart patterns
-- [code2flow](https://github.com/scottrogowski/code2flow) (MIT) — entry point classification, directory hierarchy, graph organization
-- [emerge](https://github.com/glato/emerge) (MIT) — dark mode toggle, data embedding strategy, module separation
-- [staticfg](https://github.com/coetaur0/staticfg) (Apache-2.0) — AST visitor pattern for control flow
-- [VizTracer](https://github.com/gaogaotiantian/viztracer) (Apache-2.0) — zero-config philosophy (no decorators, no code changes)
 
 ## License
 

@@ -1,8 +1,21 @@
 """Tests for CLI integration."""
 
+import dataclasses
 import json
 import subprocess
 import sys
+
+import pytest
+
+from visualpy.cli import _project_from_dict
+from visualpy.models import (
+    AnalyzedProject,
+    AnalyzedScript,
+    ScriptConnection,
+    Service,
+    Step,
+    Trigger,
+)
 
 
 def test_analyze_hello(hello_script):
@@ -81,3 +94,101 @@ def test_version():
     )
     assert result.returncode == 0
     assert "0.1.0" in result.stdout
+
+
+# --- --from-json ---
+
+
+def test_project_from_dict_roundtrip():
+    """asdict → _project_from_dict should reconstruct equivalent project."""
+    project = AnalyzedProject(
+        path="/tmp/test",
+        scripts=[
+            AnalyzedScript(
+                path="example.py",
+                is_entry_point=True,
+                steps=[
+                    Step(
+                        line_number=10,
+                        type="api_call",
+                        description="requests.get()",
+                        function_name="fetch",
+                        service=Service(name="HTTP", library="requests"),
+                        inputs=["url"],
+                        outputs=["response"],
+                    ),
+                ],
+                services=[Service(name="HTTP", library="requests")],
+                secrets=["API_KEY"],
+                triggers=[Trigger(type="cli", detail="__main__")],
+                signature={"url": "str"},
+                summary="Fetches data.",
+            ),
+        ],
+        connections=[
+            ScriptConnection(source="a.py", target="b.py", type="import", detail="a→b"),
+        ],
+        services=[Service(name="HTTP", library="requests")],
+        secrets=["API_KEY"],
+        entry_points=["example.py"],
+        summary="A test project.",
+    )
+    data = dataclasses.asdict(project)
+    restored = _project_from_dict(data)
+
+    assert restored.path == project.path
+    assert restored.summary == project.summary
+    assert len(restored.scripts) == 1
+    assert restored.scripts[0].path == "example.py"
+    assert restored.scripts[0].is_entry_point is True
+    assert restored.scripts[0].steps[0].line_number == 10
+    assert restored.scripts[0].steps[0].service.name == "HTTP"
+    assert restored.scripts[0].steps[0].inputs == ["url"]
+    assert restored.scripts[0].triggers[0].type == "cli"
+    assert restored.scripts[0].summary == "Fetches data."
+    assert len(restored.connections) == 1
+    assert restored.connections[0].source == "a.py"
+    assert restored.entry_points == ["example.py"]
+
+
+def test_from_json_roundtrip_via_cli(hello_script, tmp_path):
+    """analyze → JSON file → serve --from-json should accept the file."""
+    json_file = tmp_path / "analysis.json"
+    # Generate JSON
+    result = subprocess.run(
+        [sys.executable, "-m", "visualpy", "analyze", str(hello_script), "-o", str(json_file)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert json_file.exists()
+
+    # Load and verify it reconstructs
+    data = json.loads(json_file.read_text())
+    project = _project_from_dict(data)
+    assert len(project.scripts) == 1
+    assert project.scripts[0].path == "hello.py"
+
+
+def test_from_json_missing_file():
+    """--from-json with nonexistent file should fail cleanly."""
+    result = subprocess.run(
+        [sys.executable, "-m", "visualpy", "serve", "--from-json", "/does/not/exist.json"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert "Error" in result.stderr
+
+
+def test_serve_requires_path_or_from_json():
+    """serve with neither path nor --from-json should fail."""
+    result = subprocess.run(
+        [sys.executable, "-m", "visualpy", "serve"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert "Error" in result.stderr or "required" in result.stderr.lower()

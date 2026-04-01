@@ -9,7 +9,14 @@ from pathlib import Path
 from visualpy import __version__
 from visualpy.analyzer.cross_file import resolve_connections
 from visualpy.analyzer.scanner import scan_project
-from visualpy.models import AnalyzedProject
+from visualpy.models import (
+    AnalyzedProject,
+    AnalyzedScript,
+    ScriptConnection,
+    Service,
+    Step,
+    Trigger,
+)
 
 
 def app():
@@ -39,9 +46,14 @@ def app():
     serve_parser = subparsers.add_parser(
         "serve", help="Start web UI for visual exploration"
     )
-    serve_parser.add_argument("path", help="Path to folder to analyze")
+    serve_parser.add_argument("path", nargs="?", default=None, help="Path to folder to analyze")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    serve_parser.add_argument(
+        "--from-json",
+        dest="from_json",
+        help="Load pre-computed analysis from JSON file instead of scanning",
+    )
     serve_parser.add_argument(
         "--summarize",
         action="store_true",
@@ -138,23 +150,83 @@ def _run_analyze(args: argparse.Namespace) -> None:
         print(output)
 
 
+def _project_from_dict(data: dict) -> AnalyzedProject:
+    """Reconstruct an AnalyzedProject from a dict (inverse of dataclasses.asdict)."""
+    scripts = []
+    for s in data.get("scripts", []):
+        steps = [
+            Step(
+                line_number=st["line_number"],
+                type=st["type"],
+                description=st["description"],
+                function_name=st.get("function_name"),
+                service=Service(**st["service"]) if st.get("service") else None,
+                inputs=st.get("inputs", []),
+                outputs=st.get("outputs", []),
+            )
+            for st in s.get("steps", [])
+        ]
+        scripts.append(
+            AnalyzedScript(
+                path=s["path"],
+                is_entry_point=s.get("is_entry_point", False),
+                steps=steps,
+                imports_internal=s.get("imports_internal", []),
+                imports_external=s.get("imports_external", []),
+                services=[Service(**svc) for svc in s.get("services", [])],
+                secrets=s.get("secrets", []),
+                triggers=[Trigger(**t) for t in s.get("triggers", [])],
+                signature=s.get("signature"),
+                summary=s.get("summary"),
+            )
+        )
+    return AnalyzedProject(
+        path=data["path"],
+        scripts=scripts,
+        connections=[ScriptConnection(**c) for c in data.get("connections", [])],
+        services=[Service(**svc) for svc in data.get("services", [])],
+        secrets=data.get("secrets", []),
+        entry_points=data.get("entry_points", []),
+        summary=data.get("summary"),
+    )
+
+
 def _run_serve(args: argparse.Namespace) -> None:
     """Analyze the target and start the web UI."""
     import uvicorn
 
     from visualpy.server import create_app
 
-    target = Path(args.path).resolve()
-
-    if not target.exists():
-        print(f"[visualpy] Error: path does not exist: {args.path}", file=sys.stderr)
+    if args.from_json:
+        json_path = Path(args.from_json)
+        if not json_path.exists():
+            print(f"[visualpy] Error: JSON file not found: {args.from_json}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            data = json.loads(json_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[visualpy] Error: could not read JSON file: {exc}", file=sys.stderr)
+            sys.exit(1)
+        project = _project_from_dict(data)
+        print(f"[visualpy] Loaded analysis from {args.from_json}", file=sys.stderr)
+        if args.summarize:
+            print(
+                "[visualpy] Warning: --summarize ignored with --from-json "
+                "(generate summaries during 'analyze' instead)",
+                file=sys.stderr,
+            )
+    elif args.path:
+        target = Path(args.path).resolve()
+        if not target.exists():
+            print(f"[visualpy] Error: path does not exist: {args.path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[visualpy] Analyzing {target}...", file=sys.stderr)
+        project = _build_project(target)
+        if args.summarize:
+            _summarize_project(project)
+    else:
+        print("[visualpy] Error: either path or --from-json is required", file=sys.stderr)
         sys.exit(1)
-
-    print(f"[visualpy] Analyzing {target}...", file=sys.stderr)
-    project = _build_project(target)
-
-    if args.summarize:
-        _summarize_project(project)
 
     print(
         f"[visualpy] Found {len(project.scripts)} scripts, "

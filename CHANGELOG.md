@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- `--from-json` flag for `serve` command — load pre-computed analysis from JSON file
+- Dockerfile + docker-compose for public demo deployment (pre-baked LLM summaries)
 - Compact mode for script flow diagrams — functions with >8 steps collapse to summary nodes
 - Compact/Detailed toggle button on script pages (auto-shown for scripts with >30 steps)
 - Importance scoring for scripts — overview sorted by connectivity, entry points, services
