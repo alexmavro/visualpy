@@ -48,7 +48,7 @@ The result is a structured project map, viewable as JSON or as an interactive we
 
 - **Project dependency graph** — see how scripts relate to each other at a glance
 - **Per-script flow diagrams** — step-by-step visual breakdown of what each file does, grouped by function
-- **Compact mode** — large scripts (68+ steps) auto-collapse to readable summaries; toggle between compact and detailed views
+- **Compact mode** — functions with many steps auto-collapse to readable summaries; toggle between compact and detailed views
 - **LLM summaries** — optional plain-English descriptions powered by any LLM provider via litellm (BYOK). `--summarize` flag on both `analyze` and `serve`
 - **Importance scoring** — scripts sorted by connectivity; most important scripts highlighted with a "key" badge
 - **Service and secret detection** — instantly see which external services and API keys are in play

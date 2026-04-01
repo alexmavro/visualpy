@@ -5,8 +5,6 @@ import json
 import subprocess
 import sys
 
-import pytest
-
 from visualpy.cli import _project_from_dict
 from visualpy.models import (
     AnalyzedProject,

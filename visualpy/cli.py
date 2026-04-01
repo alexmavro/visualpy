@@ -198,6 +198,11 @@ def _run_serve(args: argparse.Namespace) -> None:
     from visualpy.server import create_app
 
     if args.from_json:
+        if args.path:
+            print(
+                f"[visualpy] Warning: --from-json takes precedence; ignoring path '{args.path}'",
+                file=sys.stderr,
+            )
         json_path = Path(args.from_json)
         if not json_path.exists():
             print(f"[visualpy] Error: JSON file not found: {args.from_json}", file=sys.stderr)
@@ -207,7 +212,15 @@ def _run_serve(args: argparse.Namespace) -> None:
         except (json.JSONDecodeError, OSError) as exc:
             print(f"[visualpy] Error: could not read JSON file: {exc}", file=sys.stderr)
             sys.exit(1)
-        project = _project_from_dict(data)
+        try:
+            project = _project_from_dict(data)
+        except (KeyError, TypeError, AttributeError) as exc:
+            print(
+                f"[visualpy] Error: invalid JSON structure: {exc}\n"
+                f"[visualpy] Hint: use 'visualpy analyze ... -o file.json' to generate a valid file",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         print(f"[visualpy] Loaded analysis from {args.from_json}", file=sys.stderr)
         if args.summarize:
             print(
