@@ -358,6 +358,93 @@ async def test_script_card_shows_summary():
     assert "Automates data fetching." in resp.text
 
 
+# --- Compact toggle + importance ---
+
+
+@pytest.mark.anyio
+async def test_script_view_has_toggle_for_large_script():
+    """Script with >30 steps should have a compact/detailed toggle button."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}", function_name="big")
+        for i in range(35)
+    ]
+    script = AnalyzedScript(path="big.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/big.py")
+    assert "flow-toggle" in resp.text
+    assert "switchFlow" in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_no_toggle_for_small_script(client):
+    """Script with <=30 steps should NOT have a toggle button element."""
+    async with AsyncClient(transport=ASGITransport(app=client), base_url="http://test") as ac:
+        resp = await ac.get("/script/example.py")
+    # The button element should not be rendered (JS function still exists but that's fine)
+    assert 'id="flow-toggle"' not in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_passes_both_flows():
+    """Response should contain both compact and detailed flow data."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}", function_name="big")
+        for i in range(35)
+    ]
+    script = AnalyzedScript(path="big.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/big.py")
+    assert "flow-detailed" in resp.text
+    assert "flow-compact" in resp.text
+
+
+@pytest.mark.anyio
+async def test_overview_scripts_sorted_by_importance():
+    """Scripts should be sorted by importance (entry points first in card grid)."""
+    scripts = [
+        AnalyzedScript(path="helper.py"),
+        AnalyzedScript(path="main.py", is_entry_point=True),
+    ]
+    project = AnalyzedProject(
+        path="/tmp", scripts=scripts, entry_points=["main.py"]
+    )
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # Look at the script cards section (after "Scripts" heading)
+    cards_section = resp.text[resp.text.index("Scripts</h2>"):]
+    main_pos = cards_section.index("/script/main.py")
+    helper_pos = cards_section.index("/script/helper.py")
+    assert main_pos < helper_pos
+
+
+@pytest.mark.anyio
+async def test_overview_key_badge():
+    """Top scripts should have a 'key' badge."""
+    scripts = [
+        AnalyzedScript(
+            path="hub.py",
+            is_entry_point=True,
+            services=[],
+            steps=[Step(line_number=i, type="api_call", description="x") for i in range(50)],
+        ),
+        AnalyzedScript(path="leaf1.py"),
+        AnalyzedScript(path="leaf2.py"),
+    ]
+    project = AnalyzedProject(
+        path="/tmp", scripts=scripts, entry_points=["hub.py"]
+    )
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # hub.py should have the key badge (top 1/3 = at least 1)
+    assert ">key<" in resp.text
+
+
 # --- Integration with real fixtures ---
 
 @pytest.mark.anyio

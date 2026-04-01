@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from visualpy.mermaid import project_graph, script_flow
+from visualpy.mermaid import importance_score, project_graph, script_flow
 from visualpy.models import AnalyzedProject
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -54,12 +54,22 @@ def create_app(project: AnalyzedProject) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def overview(request: Request):
+        scored = sorted(
+            project.scripts,
+            key=lambda s: importance_score(s, project),
+            reverse=True,
+        )
+        # Top ~30% of scripts are "key" scripts (at least 1).
+        key_count = max(1, len(scored) // 3)
+        key_paths = {s.path for s in scored[:key_count]}
         return templates.TemplateResponse(
             request,
             "overview.html",
             context={
                 "project": project,
                 "graph": app.state.project_graph,
+                "sorted_scripts": scored,
+                "key_paths": key_paths,
             },
         )
 
@@ -78,17 +88,27 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 status_code=404,
             )
         try:
-            flow = script_flow(script)
+            flow_detailed = script_flow(script)
         except Exception as exc:
-            print(f"[visualpy] Warning: failed to build flow for {path}: {exc}", file=sys.stderr)
-            flow = 'graph TB\n  error["Flow generation failed for this script"]'
+            print(f"[visualpy] Warning: failed to build detailed flow for {path}: {exc}", file=sys.stderr)
+            flow_detailed = 'graph TB\n  error["Flow generation failed for this script"]'
+        try:
+            flow_compact = script_flow(script, compact=True)
+        except Exception as exc:
+            print(f"[visualpy] Warning: failed to build compact flow for {path}: {exc}", file=sys.stderr)
+            flow_compact = 'graph TB\n  error["Compact flow generation failed"]'
+        total_steps = len(script.steps)
         return templates.TemplateResponse(
             request,
             "script.html",
             context={
                 "project": project,
                 "script": script,
-                "flow": flow,
+                "flow": flow_compact if total_steps > 30 else flow_detailed,
+                "flow_detailed": flow_detailed,
+                "flow_compact": flow_compact,
+                "total_steps": total_steps,
+                "default_compact": total_steps > 30,
             },
         )
 

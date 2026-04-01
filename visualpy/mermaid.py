@@ -4,9 +4,20 @@ from __future__ import annotations
 
 import re
 import sys
+from collections import Counter
 from pathlib import PurePosixPath
 
 from visualpy.models import AnalyzedProject, AnalyzedScript, ScriptConnection, Step
+
+# Short labels for step types (used in compact nodes and potentially templates).
+_TYPE_LABELS: dict[str, str] = {
+    "api_call": "API",
+    "file_io": "File I/O",
+    "db_op": "DB",
+    "decision": "Decision",
+    "output": "Output",
+    "transform": "Transform",
+}
 
 # Step type → Mermaid node shape template.
 # Placeholders: {id} = sanitized node ID, {label} = escaped description.
@@ -37,7 +48,8 @@ classDef dbop fill:#f3e8ff,stroke:#9333ea,color:#3b0764
 classDef decision fill:#ffedd5,stroke:#ea580c,color:#7c2d12
 classDef output fill:#f3f4f6,stroke:#6b7280,color:#1f2937
 classDef transform fill:#ccfbf1,stroke:#0d9488,color:#134e4a
-classDef entry fill:#dcfce7,stroke:#16a34a,stroke-width:3px,color:#14532d"""
+classDef entry fill:#dcfce7,stroke:#16a34a,stroke-width:3px,color:#14532d
+classDef compact fill:#f0f4ff,stroke:#6366f1,color:#312e81,stroke-width:2px"""
 
 _SPECIAL_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _WARNED_TYPES: set[str] = set()
@@ -100,6 +112,42 @@ def _step_node(step: Step, script_stem: str) -> str:
     return node_def
 
 
+def _compact_function_node(func_name: str, steps: list[Step], stem: str) -> str:
+    """Generate a single Mermaid node summarising a collapsed function."""
+    node_id = f"n_{_SPECIAL_CHARS.sub('_', stem)}_{_SPECIAL_CHARS.sub('_', func_name)}_compact"
+
+    counts = Counter(s.type for s in steps)
+    # Top 4 types by count, descending.
+    top = counts.most_common(4)
+    parts = [f"{n} {_TYPE_LABELS.get(t, t)}" for t, n in top]
+    if len(counts) > 4:
+        parts.append(f"+{len(counts) - 4} more")
+    type_summary = ", ".join(parts)
+    total = len(steps)
+
+    raw_label = f"{func_name}() — {total} steps ({type_summary})"
+    label = _escape_label(raw_label, max_len=100)
+    return f'{node_id}[["{label}"]]:::compact'
+
+
+def importance_score(script: AnalyzedScript, project: AnalyzedProject) -> int:
+    """Heuristic importance score for a script within a project.
+
+    Higher = more important. Used to sort scripts in the overview.
+    """
+    score = 0
+    for conn in project.connections:
+        if conn.source == script.path:
+            score += 1
+        if conn.target == script.path:
+            score += 1
+    if script.path in project.entry_points:
+        score += 2
+    score += len(script.services)
+    score += min(len(script.steps) // 20, 5)
+    return score
+
+
 def project_graph(project: AnalyzedProject) -> str:
     """Generate a Mermaid graph showing scripts as nodes and connections as edges."""
     lines: list[str] = ["graph LR"]
@@ -146,8 +194,17 @@ def project_graph(project: AnalyzedProject) -> str:
     return "\n".join(lines)
 
 
-def script_flow(script: AnalyzedScript) -> str:
-    """Generate a Mermaid flowchart for a single script's steps."""
+def script_flow(
+    script: AnalyzedScript,
+    *,
+    compact: bool = False,
+    compact_threshold: int = 8,
+) -> str:
+    """Generate a Mermaid flowchart for a single script's steps.
+
+    When *compact* is True, functions with more than *compact_threshold*
+    steps are collapsed into a single summary node.
+    """
     lines: list[str] = ["graph TB"]
 
     if not script.steps:
@@ -167,6 +224,11 @@ def script_flow(script: AnalyzedScript) -> str:
     # Emit subgraphs per function.
     click_lines: list[str] = []
     for func_name, steps in func_steps.items():
+        # Compact mode: collapse large functions into a single node.
+        if compact and func_name != "_module_" and len(steps) > compact_threshold:
+            lines.append(f"  {_compact_function_node(func_name, steps, stem)}")
+            continue
+
         if func_name != "_module_":
             sg_id = _sanitize_id(f"{stem}_{func_name}")
             label = _escape_label(func_name + "()")

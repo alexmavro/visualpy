@@ -52,9 +52,20 @@
         <div class="lg:col-span-2 space-y-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold">Flow</h2>
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-lg font-semibold">Flow</h2>
+                        {% if total_steps is defined and total_steps > 30 %}
+                        <button id="flow-toggle"
+                                onclick="switchFlow()"
+                                class="px-3 py-1 text-xs rounded-full border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                            {{ "Show Detailed" if default_compact else "Show Compact" }}
+                        </button>
+                        {% endif %}
+                    </div>
                     <p class="text-xs text-gray-400 dark:text-gray-500">Click any step to see details</p>
                 </div>
+                <script id="flow-detailed" type="text/plain">{{ flow_detailed|default(flow) }}</script>
+                <script id="flow-compact" type="text/plain">{{ flow_compact|default(flow) }}</script>
                 <div class="overflow-x-auto">
                     <pre class="mermaid">
 {{ flow }}
@@ -174,6 +185,39 @@ function showStepDetail(scriptPath, line) {
     }
     htmx.ajax('GET', '/partials/step/' + encodeURIComponent(scriptPath) + '/' + line, {target: content, swap: 'innerHTML'});
     document.getElementById('step-detail').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
+var _flowIsCompact = {{ 'true' if default_compact|default(false) else 'false' }};
+
+async function switchFlow() {
+    if (!window.mermaidModule) {
+        console.warn('[visualpy] Mermaid not loaded yet');
+        return;
+    }
+
+    _flowIsCompact = !_flowIsCompact;
+    var btn = document.getElementById('flow-toggle');
+    if (btn) btn.textContent = _flowIsCompact ? 'Show Detailed' : 'Show Compact';
+
+    var src = _flowIsCompact
+        ? document.getElementById('flow-compact')
+        : document.getElementById('flow-detailed');
+    if (!src) return;
+
+    var el = document.querySelector('.mermaid');
+    if (!el) return;
+
+    var code = src.textContent.trim();
+    el.setAttribute('data-mermaid-src', code);
+    el.removeAttribute('data-processed');
+    el.innerHTML = code;
+
+    try {
+        await window.mermaidModule.run({nodes: [el]});
+    } catch (err) {
+        console.error('[visualpy] Mermaid re-render failed:', err);
+        el.innerHTML = '<p class="text-sm text-red-600 dark:text-red-400">Diagram failed to render. Try refreshing the page.</p>';
+    }
 }
 </script>
 {% endblock %}

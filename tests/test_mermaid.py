@@ -4,9 +4,11 @@ from visualpy.analyzer.ast_parser import analyze_file
 from visualpy.analyzer.cross_file import resolve_connections
 from visualpy.analyzer.scanner import scan_project
 from visualpy.mermaid import (
+    _compact_function_node,
     _escape_label,
     _sanitize_id,
     _step_node,
+    importance_score,
     project_graph,
     script_flow,
 )
@@ -318,6 +320,191 @@ def test_script_flow_all_step_types():
     assert '{"d"}:::decision' in result
     assert '(["Output: e"]):::output' in result
     assert '[["Transform: f"]]:::transform' in result
+
+
+# --- _compact_function_node ---
+
+
+def test_compact_function_node_label():
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}")
+        for i in range(10)
+    ]
+    result = _compact_function_node("fetch_data", steps, "test")
+    assert "fetch_data()" in result
+    assert "10 steps" in result
+    assert "10 API" in result
+
+
+def test_compact_function_node_shape():
+    steps = [Step(line_number=1, type="transform", description="x")]
+    result = _compact_function_node("func", steps, "test")
+    assert '[[' in result
+    assert ']]' in result
+    assert ":::compact" in result
+
+
+def test_compact_function_node_multiple_types():
+    steps = [
+        Step(line_number=1, type="api_call", description="a"),
+        Step(line_number=2, type="api_call", description="b"),
+        Step(line_number=3, type="file_io", description="c"),
+        Step(line_number=4, type="decision", description="d"),
+    ]
+    result = _compact_function_node("func", steps, "test")
+    assert "4 steps" in result
+    assert "2 API" in result
+    assert "1 File I/O" in result
+    assert "1 Decision" in result
+
+
+# --- script_flow compact mode ---
+
+
+def test_compact_collapses_large_functions():
+    """Functions with more steps than threshold are collapsed."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}", function_name="big_func")
+        for i in range(12)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, compact=True, compact_threshold=8)
+    assert "big_func()" in result
+    assert "12 steps" in result
+    assert ":::compact" in result
+    # Should NOT have individual step nodes
+    assert "n_test_0" not in result
+    # Should NOT have a subgraph
+    assert "subgraph" not in result
+
+
+def test_compact_keeps_small_functions():
+    """Functions with steps at or below threshold stay expanded."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}", function_name="small_func")
+        for i in range(5)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, compact=True, compact_threshold=8)
+    # Should have individual step nodes (not collapsed)
+    assert "n_test_0" in result
+    assert "subgraph" in result
+    assert ":::compact" not in result
+
+
+def test_compact_module_level_never_collapsed():
+    """Module-level steps (_module_) are never collapsed even in compact mode."""
+    steps = [
+        Step(line_number=i, type="output", description=f"print{i}")
+        for i in range(20)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, compact=True, compact_threshold=8)
+    # Module level steps should all be present individually
+    assert "n_test_0" in result
+    assert "n_test_19" in result
+    assert ":::compact" not in result
+
+
+def test_compact_threshold_boundary():
+    """Function with exactly threshold steps stays expanded; threshold+1 collapses."""
+    steps_at = [
+        Step(line_number=i, type="api_call", description=f"c{i}", function_name="func")
+        for i in range(8)
+    ]
+    script_at = AnalyzedScript(path="test.py", steps=steps_at)
+    result_at = script_flow(script_at, compact=True, compact_threshold=8)
+    assert ":::compact" not in result_at  # stays expanded
+
+    steps_over = steps_at + [
+        Step(line_number=8, type="api_call", description="c8", function_name="func")
+    ]
+    script_over = AnalyzedScript(path="test.py", steps=steps_over)
+    result_over = script_flow(script_over, compact=True, compact_threshold=8)
+    assert ":::compact" in result_over  # collapsed
+
+
+def test_compact_no_internal_edges():
+    """Collapsed functions should have no --> edges."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"c{i}", function_name="big")
+        for i in range(12)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, compact=True, compact_threshold=8)
+    assert "-->" not in result
+
+
+def test_compact_classdefs():
+    steps = [
+        Step(line_number=i, type="api_call", description=f"c{i}", function_name="big")
+        for i in range(12)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, compact=True)
+    assert "classDef compact" in result
+
+
+def test_compact_default_is_false():
+    """script_flow() without compact arg produces same output as compact=False."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"c{i}", function_name="big")
+        for i in range(12)
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result_default = script_flow(script)
+    result_explicit = script_flow(script, compact=False)
+    assert result_default == result_explicit
+    # Should have individual steps, not compact
+    assert ":::compact" not in result_default
+    assert "n_test_0" in result_default
+
+
+# --- importance_score ---
+
+
+def test_importance_entry_point_bonus():
+    script = AnalyzedScript(path="main.py", is_entry_point=True)
+    project = AnalyzedProject(path="/tmp", scripts=[script], entry_points=["main.py"])
+    score = importance_score(script, project)
+    assert score >= 2  # entry point bonus
+
+
+def test_importance_connections():
+    scripts = [AnalyzedScript(path="a.py"), AnalyzedScript(path="b.py")]
+    connections = [
+        ScriptConnection(source="a.py", target="b.py", type="import", detail=""),
+        ScriptConnection(source="b.py", target="a.py", type="file_io", detail=""),
+    ]
+    project = AnalyzedProject(path="/tmp", scripts=scripts, connections=connections)
+    score_a = importance_score(scripts[0], project)
+    assert score_a >= 2  # 1 out + 1 in
+
+
+def test_importance_services():
+    script = AnalyzedScript(
+        path="api.py",
+        services=[Service(name="S1", library="l1"), Service(name="S2", library="l2")],
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    score = importance_score(script, project)
+    assert score >= 2  # 2 services
+
+
+def test_importance_step_bonus_capped():
+    steps = [Step(line_number=i, type="output", description="x") for i in range(200)]
+    script = AnalyzedScript(path="big.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    score = importance_score(script, project)
+    # 200 steps // 20 = 10, but capped at 5
+    assert score == 5
+
+
+def test_importance_isolated_script():
+    script = AnalyzedScript(path="lonely.py", steps=[Step(line_number=1, type="output", description="x")])
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    score = importance_score(script, project)
+    assert score == 0  # 1 step // 20 = 0, no connections, no entry, no services
 
 
 # --- Integration with real fixtures ---

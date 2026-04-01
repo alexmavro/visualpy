@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Compact mode for script flow diagrams — functions with >8 steps collapse to summary nodes
+- Compact/Detailed toggle button on script pages (auto-shown for scripts with >30 steps)
+- Importance scoring for scripts — overview sorted by connectivity, entry points, services
+- "Key" badge on top scripts in overview
 - LLM-generated plain-English summaries via litellm (BYOK — bring your own key)
 - `--summarize` CLI flag for `analyze` and `serve` commands
 - Per-script summaries from structured AST data (steps, services, triggers)

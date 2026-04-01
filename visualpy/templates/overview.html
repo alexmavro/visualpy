@@ -62,7 +62,7 @@
         <h2 class="text-lg font-semibold mb-4">Scripts</h2>
         {% if project.scripts %}
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {% for script in project.scripts %}
+            {% for script in sorted_scripts|default(project.scripts) %}
             {% include "partials/script_card.html" %}
             {% endfor %}
         </div>

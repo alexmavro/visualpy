@@ -11,9 +11,14 @@
    class="block bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md hover:ring-1 hover:ring-blue-300 dark:hover:ring-blue-600 transition">
     <div class="flex items-center justify-between mb-1">
         <span class="font-medium text-sm truncate" title="{{ script.path }}">{{ script.path.split('/')[-1] }}</span>
-        {% if script.is_entry_point %}
-        <span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded shrink-0 ml-2">entry</span>
-        {% endif %}
+        <span class="flex gap-1 shrink-0 ml-2">
+            {% if key_paths is defined and script.path in key_paths %}
+            <span class="px-1.5 py-0.5 text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 rounded">key</span>
+            {% endif %}
+            {% if script.is_entry_point %}
+            <span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">entry</span>
+            {% endif %}
+        </span>
     </div>
     {% if '/' in script.path %}
     <p class="text-xs text-gray-400 dark:text-gray-500 truncate mb-1.5" title="{{ script.path }}">{{ script.path }}</p>
