@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- LLM-generated plain-English summaries via litellm (BYOK — bring your own key)
+- `--summarize` CLI flag for `analyze` and `serve` commands
+- Per-script summaries from structured AST data (steps, services, triggers)
+- Per-project executive summary from script summaries and connections
+- Model override via `VISUALPY_MODEL` environment variable (default: `gemini/gemini-2.5-flash`)
+- Summary rendering in web UI: overview header, script cards, script headers
+- Graceful degradation when litellm not installed or API key missing
 - README with badges, personas, quick start, roadmap, and acknowledgments
 - CONTRIBUTING.md with non-dev-friendly contribution guide
 - CODE_OF_CONDUCT.md (Contributor Covenant v2.1)

@@ -29,6 +29,11 @@ def app():
     analyze_parser.add_argument(
         "--output", "-o", help="Output JSON file (default: stdout)"
     )
+    analyze_parser.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Generate LLM summaries (requires API key, install with pip install visualpy[llm])",
+    )
 
     # serve command
     serve_parser = subparsers.add_parser(
@@ -37,6 +42,11 @@ def app():
     serve_parser.add_argument("path", help="Path to folder to analyze")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    serve_parser.add_argument(
+        "--summarize",
+        action="store_true",
+        help="Generate LLM summaries (requires API key, install with pip install visualpy[llm])",
+    )
 
     args = parser.parse_args()
 
@@ -83,6 +93,25 @@ def _build_project(target: Path) -> AnalyzedProject:
     )
 
 
+def _summarize_project(project: AnalyzedProject) -> None:
+    """Populate LLM summaries on the project (mutates in place)."""
+    from visualpy.summarizer import summarize_project, summarize_script
+
+    print("[visualpy] Generating summaries...", file=sys.stderr)
+
+    for i, script in enumerate(project.scripts, 1):
+        print(
+            f"[visualpy]   Script {i}/{len(project.scripts)}: {script.path}",
+            file=sys.stderr,
+        )
+        script.summary = summarize_script(script)
+
+    project.summary = summarize_project(project)
+
+    count = sum(1 for s in project.scripts if s.summary) + (1 if project.summary else 0)
+    print(f"[visualpy] Generated {count} summaries", file=sys.stderr)
+
+
 def _run_analyze(args: argparse.Namespace) -> None:
     """Run the analysis pipeline and output JSON."""
     target = Path(args.path).resolve()
@@ -92,6 +121,10 @@ def _run_analyze(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     project = _build_project(target)
+
+    if args.summarize:
+        _summarize_project(project)
+
     output = json.dumps(dataclasses.asdict(project), indent=2)
 
     if args.output:
@@ -119,6 +152,10 @@ def _run_serve(args: argparse.Namespace) -> None:
 
     print(f"[visualpy] Analyzing {target}...", file=sys.stderr)
     project = _build_project(target)
+
+    if args.summarize:
+        _summarize_project(project)
+
     print(
         f"[visualpy] Found {len(project.scripts)} scripts, "
         f"{len(project.connections)} connections",

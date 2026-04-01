@@ -71,3 +71,4 @@ class AnalyzedProject:
     services: list[Service] = field(default_factory=list)
     secrets: list[str] = field(default_factory=list)
     entry_points: list[str] = field(default_factory=list)
+    summary: str | None = None  # LLM-generated executive summary

@@ -306,6 +306,58 @@ async def test_mermaid_rerender_function_present(client):
     assert "reRenderMermaid" in resp.text
 
 
+# --- LLM summary rendering ---
+
+
+@pytest.mark.anyio
+async def test_overview_shows_project_summary():
+    project = AnalyzedProject(
+        path="/tmp/test",
+        scripts=[AnalyzedScript(path="a.py")],
+        summary="This project automates lead generation.",
+    )
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    assert "This project automates lead generation." in resp.text
+
+
+@pytest.mark.anyio
+async def test_overview_no_summary_no_crash():
+    project = AnalyzedProject(path="/tmp/test", scripts=[AnalyzedScript(path="a.py")])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    assert resp.status_code == 200
+    assert "lead generation" not in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_shows_summary():
+    script = AnalyzedScript(
+        path="example.py",
+        summary="Fetches data from an API and saves it locally.",
+    )
+    project = AnalyzedProject(path="/tmp/test", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/example.py")
+    assert "Fetches data from an API and saves it locally." in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_card_shows_summary():
+    script = AnalyzedScript(
+        path="example.py",
+        summary="Automates data fetching.",
+    )
+    project = AnalyzedProject(path="/tmp/test", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    assert "Automates data fetching." in resp.text
+
+
 # --- Integration with real fixtures ---
 
 @pytest.mark.anyio

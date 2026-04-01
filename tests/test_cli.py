@@ -59,6 +59,20 @@ def test_analyze_nonexistent_path():
     assert "Error" in result.stderr
 
 
+def test_analyze_summarize_flag(hello_script):
+    """--summarize flag is accepted and summary fields are present in output."""
+    result = subprocess.run(
+        [sys.executable, "-m", "visualpy", "analyze", str(hello_script), "--summarize"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    data = json.loads(result.stdout)
+    assert "summary" in data
+    assert "summary" in data["scripts"][0]
+
+
 def test_version():
     result = subprocess.run(
         [sys.executable, "-m", "visualpy", "--version"],

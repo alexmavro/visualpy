@@ -18,6 +18,9 @@
     {% if '/' in script.path %}
     <p class="text-xs text-gray-400 dark:text-gray-500 truncate mb-1.5" title="{{ script.path }}">{{ script.path }}</p>
     {% endif %}
+    {% if script.summary %}
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5 line-clamp-2">{{ script.summary }}</p>
+    {% endif %}
     <div class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
         <span>{{ script.steps|length }} steps</span>
         {% if script.steps %}
