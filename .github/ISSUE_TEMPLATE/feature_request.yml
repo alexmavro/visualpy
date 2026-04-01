@@ -1,0 +1,30 @@
+name: "I have an idea"
+description: "Suggest a feature or improvement — technical knowledge not required."
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We love hearing ideas — technical or not. If you can describe what you'd like, that's all we need.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like?
+      description: Describe the feature or change you'd like to see.
+      placeholder: "It would be cool if visualpy could..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would this be useful? (optional)
+      description: Help us understand the problem this solves or the workflow it improves.
+      placeholder: "This would help because..."
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Any examples? (optional)
+      description: If you've seen something similar in another tool, or have a sketch of what you mean, share it here.

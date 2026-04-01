@@ -1,0 +1,60 @@
+name: "Something isn't working"
+description: "Found a bug? No worries — that's how software gets better."
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more detail you can give, the faster we can fix it — but don't stress about filling in everything. The first two fields are all we really need.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe what went wrong. Screenshots or error messages are helpful if you have them.
+      placeholder: "When I ran visualpy serve on my project, the page showed..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: "I expected to see a graph of my scripts, but instead..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (optional)
+      description: If you can, describe the steps to trigger the issue.
+      placeholder: |
+        1. Run `visualpy serve /path/to/folder`
+        2. Click on a script
+        3. ...
+
+  - type: dropdown
+    id: python-version
+    attributes:
+      label: Python version (optional)
+      options:
+        - "3.12"
+        - "3.13"
+        - "Other"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system (optional)
+      options:
+        - "Linux"
+        - "macOS"
+        - "Windows"
+        - "Other"
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: If applicable, paste screenshots here. You can drag and drop images.
