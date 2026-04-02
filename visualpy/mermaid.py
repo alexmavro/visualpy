@@ -8,7 +8,14 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 from visualpy.models import AnalyzedProject, AnalyzedScript, ScriptConnection, Step
-from visualpy.translate import BUSINESS_LABELS, translate_connection, translate_step
+from visualpy.translate import (
+    BUSINESS_LABELS,
+    PHASE_LABELS,
+    PHASE_ORDER,
+    infer_phase,
+    translate_connection,
+    translate_step,
+)
 
 # Short labels for step types (used in compact nodes and potentially templates).
 _TYPE_LABELS: dict[str, str] = {
@@ -93,7 +100,8 @@ def _step_node(step: Step, script_stem: str, *, business: bool = False) -> str:
         # Per-step isolation: if translation fails, fall back to raw description.
         try:
             label = _escape_label(translate_step(step))
-        except Exception:
+        except Exception as exc:
+            print(f"[visualpy] Warning: translate_step failed for L{step.line_number}: {exc}", file=sys.stderr)
             label = _escape_label(step.description)
     else:
         # Technical mode: type prefix + raw description.
@@ -271,4 +279,52 @@ def script_flow(
 
     lines.extend(click_lines)
     lines.append(_CLASS_DEFS)
+    return "\n".join(lines)
+
+
+# Phase colors for the pedagogical diagram.
+_PHASE_CLASSDEFS = """\
+classDef phase_setup fill:#dbeafe,stroke:#2563eb,color:#1e3a5f,stroke-width:2px
+classDef phase_processing fill:#ccfbf1,stroke:#0d9488,color:#134e4a,stroke-width:2px
+classDef phase_storage fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+classDef phase_error_handling fill:#ffedd5,stroke:#ea580c,color:#7c2d12,stroke-width:2px
+classDef phase_reporting fill:#f3f4f6,stroke:#6b7280,color:#1f2937,stroke-width:2px"""
+
+
+def pedagogical_flow(script: AnalyzedScript) -> str:
+    """Generate a simple phase-pipeline Mermaid diagram for business view.
+
+    Shows 3-5 large blocks (one per phase) connected by arrows, instead of
+    the full 50+ node technical flowchart.
+    """
+    if not script.steps:
+        return 'graph LR\n  empty["No steps detected"]'
+
+    # Count steps per phase.
+    phase_counts: dict[str, int] = {}
+    for step in script.steps:
+        phase = infer_phase(step)
+        phase_counts[phase] = phase_counts.get(phase, 0) + 1
+
+    # Build nodes in PHASE_ORDER, skip empty phases.
+    nodes: list[tuple[str, str]] = []  # (node_id, node_def)
+    for phase_key in PHASE_ORDER:
+        count = phase_counts.get(phase_key, 0)
+        if count == 0:
+            continue
+        label = PHASE_LABELS.get(phase_key, phase_key)
+        step_word = "step" if count == 1 else "steps"
+        escaped = _escape_label(label)
+        node_id = f"phase_{phase_key}"
+        nodes.append((node_id, f'{node_id}["{escaped}<br/>{count} {step_word}"]:::phase_{phase_key}'))
+
+    lines: list[str] = ["graph LR"]
+    for _, node_def in nodes:
+        lines.append(f"  {node_def}")
+
+    # Chain nodes with arrows.
+    for i in range(len(nodes) - 1):
+        lines.append(f"  {nodes[i][0]} --> {nodes[i + 1][0]}")
+
+    lines.append(_PHASE_CLASSDEFS)
     return "\n".join(lines)

@@ -7,8 +7,12 @@ import pytest
 from visualpy.models import Service, Step, Trigger
 from visualpy.translate import (
     BUSINESS_LABELS,
+    PHASE_LABELS,
+    PHASE_ORDER,
     TECHNICAL_LABELS,
     TECHNICAL_LABELS_SHORT,
+    group_steps_by_phase,
+    infer_phase,
     translate_connection,
     translate_secret,
     translate_step,
@@ -375,3 +379,135 @@ class TestEdgeCases:
     def test_file_io_with_quoted_path(self):
         result = translate_step(_step("file_io", "open('config.json')"))
         assert result == "Opens file"
+
+
+# --- infer_phase -------------------------------------------------------------
+
+
+class TestInferPhase:
+    def test_try_except_is_error_handling(self):
+        assert infer_phase(_step("decision", "try/except block")) == "error_handling"
+
+    def test_for_loop_is_processing(self):
+        assert infer_phase(_step("decision", "for item in items")) == "processing"
+
+    def test_while_loop_is_processing(self):
+        assert infer_phase(_step("decision", "while time.time() < max")) == "processing"
+
+    def test_print_is_reporting(self):
+        assert infer_phase(_step("output", "print()")) == "reporting"
+
+    def test_logger_is_reporting(self):
+        assert infer_phase(_step("output", "logger.info()")) == "reporting"
+
+    def test_transform_is_processing(self):
+        assert infer_phase(_step("transform", ".split()")) == "processing"
+
+    def test_api_get_is_setup(self):
+        assert infer_phase(_step("api_call", "requests.get()")) == "setup"
+
+    def test_api_post_is_storage(self):
+        assert infer_phase(_step("api_call", "requests.post()")) == "storage"
+
+    def test_api_authorize_is_setup(self):
+        assert infer_phase(_step("api_call", "gspread.authorize()")) == "setup"
+
+    def test_file_read_is_setup(self):
+        assert infer_phase(_step("file_io", "json.load()")) == "setup"
+
+    def test_file_write_is_storage(self):
+        assert infer_phase(_step("file_io", "json.dump()")) == "storage"
+
+    def test_file_to_csv_is_storage(self):
+        assert infer_phase(_step("file_io", ".to_csv()")) == "storage"
+
+    def test_file_open_is_setup(self):
+        assert infer_phase(_step("file_io", "open()")) == "setup"
+
+    def test_db_query_is_setup(self):
+        assert infer_phase(_step("db_op", "cursor.execute()")) == "setup"
+
+    def test_db_insert_is_storage(self):
+        assert infer_phase(_step("db_op", ".insert()")) == "storage"
+
+    def test_db_commit_is_storage(self):
+        assert infer_phase(_step("db_op", ".commit()")) == "storage"
+
+    def test_if_condition_is_processing(self):
+        assert infer_phase(_step("decision", "if value is None")) == "processing"
+
+    def test_unknown_type_is_processing(self):
+        assert infer_phase(_step("custom_type", "whatever")) == "processing"
+
+    def test_empty_description_no_crash(self):
+        result = infer_phase(_step("api_call", ""))
+        assert result in PHASE_ORDER
+
+    def test_api_delete_is_storage(self):
+        assert infer_phase(_step("api_call", "requests.delete()")) == "storage"
+
+    def test_list_comprehension_is_processing(self):
+        assert infer_phase(_step("transform", "list comprehension: [x for ...]")) == "processing"
+
+    def test_send_is_storage(self):
+        assert infer_phase(_step("api_call", "slack.send(msg)")) == "storage"
+
+
+# --- group_steps_by_phase ---------------------------------------------------
+
+
+class TestGroupStepsByPhase:
+    def test_groups_mixed_steps(self):
+        steps = [
+            _step("api_call", "requests.get()"),       # setup
+            _step("transform", ".split()"),             # processing
+            _step("file_io", "json.dump()"),            # storage
+            _step("output", "print()"),                 # reporting
+            _step("decision", "try/except block"),      # error_handling
+        ]
+        result = group_steps_by_phase(steps)
+        phase_keys = [k for k, _, _ in result]
+        assert phase_keys == ["setup", "processing", "storage", "error_handling", "reporting"]
+
+    def test_empty_phases_omitted(self):
+        steps = [
+            _step("output", "print()"),
+            _step("output", "logger.info()"),
+        ]
+        result = group_steps_by_phase(steps)
+        assert len(result) == 1
+        assert result[0][0] == "reporting"
+        assert len(result[0][2]) == 2
+
+    def test_empty_steps_returns_empty(self):
+        assert group_steps_by_phase([]) == []
+
+    def test_all_same_phase(self):
+        steps = [_step("transform", f"op{i}") for i in range(5)]
+        result = group_steps_by_phase(steps)
+        assert len(result) == 1
+        assert result[0][0] == "processing"
+        assert len(result[0][2]) == 5
+
+    def test_phase_labels_correct(self):
+        steps = [_step("api_call", "requests.get()")]
+        result = group_steps_by_phase(steps)
+        assert result[0][1] == "Setup & Data Gathering"
+
+    def test_phase_order_respected(self):
+        """Steps added in reverse order should still group in PHASE_ORDER."""
+        steps = [
+            _step("output", "print()"),                 # reporting
+            _step("decision", "try/except block"),      # error_handling
+            _step("file_io", "json.dump()"),            # storage
+            _step("transform", ".strip()"),             # processing
+            _step("api_call", "requests.get()"),        # setup
+        ]
+        result = group_steps_by_phase(steps)
+        phase_keys = [k for k, _, _ in result]
+        assert phase_keys == ["setup", "processing", "storage", "error_handling", "reporting"]
+
+    def test_phase_labels_completeness(self):
+        """All PHASE_ORDER keys must exist in PHASE_LABELS."""
+        for key in PHASE_ORDER:
+            assert key in PHASE_LABELS, f"Missing label for phase {key}"

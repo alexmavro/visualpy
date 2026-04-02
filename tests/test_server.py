@@ -561,3 +561,65 @@ async def test_script_secrets_translated():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get("/script/api.py")
     assert "AWS credentials" in resp.text
+
+
+# --- Pedagogical flow + phase groups (Sprint 6.5) ---
+
+
+@pytest.mark.anyio
+async def test_script_view_has_pedagogical_flow():
+    """Script view should contain the pedagogical phase diagram."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),
+        Step(line_number=2, type="transform", description=".split()"),
+        Step(line_number=3, type="file_io", description="json.dump()"),
+    ]
+    script = AnalyzedScript(path="pipeline.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/pipeline.py")
+    assert "flow-pedagogical" in resp.text
+    assert "phase_setup" in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_has_phase_groups():
+    """Script view should contain phase group headings."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),
+        Step(line_number=2, type="output", description="print()"),
+    ]
+    script = AnalyzedScript(path="job.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/job.py")
+    assert "Setup &amp; Data Gathering" in resp.text or "Setup & Data Gathering" in resp.text
+    assert "Reporting" in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_phase_globals_available():
+    """Phase inference globals should be registered and usable."""
+    project = AnalyzedProject(path="/tmp", scripts=[AnalyzedScript(path="a.py")])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # Just verifies the app initializes without errors (globals registered correctly).
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_script_view_business_layout_has_details():
+    """Business view should have collapsed technical diagram in a details tag."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/test.py")
+    # The technical diagram should be in a <details> element in business view
+    assert "<details" in resp.text

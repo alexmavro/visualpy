@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from visualpy.mermaid import importance_score, project_graph, script_flow
+from visualpy.mermaid import importance_score, pedagogical_flow, project_graph, script_flow
 from visualpy.models import AnalyzedProject
 from visualpy.translate import (
     BUSINESS_LABELS,
@@ -41,6 +41,12 @@ def create_app(project: AnalyzedProject) -> FastAPI:
     templates.env.globals["translate_trigger"] = translate_trigger
     templates.env.globals["translate_secret"] = translate_secret
     templates.env.globals["translate_connection"] = translate_connection
+
+    # Phase inference globals (Sprint 6.5).
+    from visualpy.translate import PHASE_LABELS, group_steps_by_phase, infer_phase
+    templates.env.globals["infer_phase"] = infer_phase
+    templates.env.globals["group_steps_by_phase"] = group_steps_by_phase
+    templates.env.globals["phase_labels"] = PHASE_LABELS
 
     # Fallback diagrams for error cases.
     _GRAPH_FALLBACK = 'graph LR\n  error["Graph generation failed"]'
@@ -136,7 +142,21 @@ def create_app(project: AnalyzedProject) -> FastAPI:
         if flow_compact_biz == _FLOW_FALLBACK:
             flow_compact_biz = flow_compact
 
+        # Pedagogical flow: simple phase pipeline for business view.
+        try:
+            flow_pedagogical = pedagogical_flow(script)
+        except Exception as exc:
+            traceback.print_exc(file=sys.stderr)
+            print(f"[visualpy] Warning: failed to build pedagogical flow for {path}: {exc}", file=sys.stderr)
+            flow_pedagogical = _FLOW_FALLBACK
+
         total_steps = len(script.steps)
+        try:
+            phase_groups = group_steps_by_phase(script.steps)
+        except Exception as exc:
+            traceback.print_exc(file=sys.stderr)
+            print(f"[visualpy] Warning: failed to group steps by phase for {path}: {exc}", file=sys.stderr)
+            phase_groups = []
         return templates.TemplateResponse(
             request,
             "script.html",
@@ -148,6 +168,8 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 "flow_compact": flow_compact,
                 "flow_detailed_biz": flow_detailed_biz,
                 "flow_compact_biz": flow_compact_biz,
+                "flow_pedagogical": flow_pedagogical,
+                "phase_groups": phase_groups,
                 "total_steps": total_steps,
                 "default_compact": total_steps > 30,
             },

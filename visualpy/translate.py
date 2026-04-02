@@ -318,3 +318,91 @@ _CONNECTION_LABELS: dict[str, str] = {
 def translate_connection(conn_type: str) -> str:
     """Return a business-friendly verb for a connection type."""
     return _CONNECTION_LABELS.get(conn_type, conn_type)
+
+
+# --- Phase inference --------------------------------------------------------
+
+PHASE_LABELS: dict[str, str] = {
+    "setup": "Setup & Data Gathering",
+    "processing": "Data Processing",
+    "storage": "Storage & Delivery",
+    "error_handling": "Error Handling",
+    "reporting": "Reporting",
+}
+
+PHASE_ORDER: list[str] = ["setup", "processing", "storage", "error_handling", "reporting"]
+
+# Keywords that signal write/storage intent.
+_STORAGE_KEYWORDS = (
+    ".post(", ".put(", ".patch(", ".delete(",
+    "send(", ".dump(", ".to_csv", ".to_json", ".to_excel",
+    ".write(", ".write_text(", "'w'", '"w"',
+    ".insert(", ".add(", ".commit(", ".create(", ".save(", ".update(",
+)
+
+# Keywords that signal read/setup intent.
+_SETUP_KEYWORDS = (
+    "authorize(", "authenticate(", "connect(",
+    ".load(", ".read_csv", ".read_json", ".read_excel",
+    ".read(", ".read_text(", "'r'", '"r"',
+    "open(", ".get(",
+)
+
+
+def infer_phase(step: Step) -> str:
+    """Infer the business phase of a step from its type and description."""
+    desc = (step.description or "").lower()
+
+    # Error handling is always its own phase.
+    if step.type == "decision" and desc.startswith("try/except"):
+        return "error_handling"
+
+    # Loops are processing.
+    if step.type == "decision" and (desc.startswith("for ") or desc.startswith("while ")):
+        return "processing"
+
+    # Output steps are reporting.
+    if step.type == "output":
+        return "reporting"
+
+    # Transforms are processing.
+    if step.type == "transform":
+        return "processing"
+
+    # For api_call, file_io, db_op — check description keywords.
+    if any(kw in desc for kw in _STORAGE_KEYWORDS):
+        return "storage"
+    if any(kw in desc for kw in _SETUP_KEYWORDS):
+        return "setup"
+
+    # Generic decisions (if conditions) default to processing.
+    if step.type == "decision":
+        return "processing"
+
+    # Default: setup for api_call/file_io/db_op, processing for anything else.
+    if step.type in ("api_call", "file_io", "db_op"):
+        return "setup"
+    return "processing"
+
+
+def group_steps_by_phase(steps: list[Step]) -> list[tuple[str, str, list[Step]]]:
+    """Group steps by inferred phase, ordered by PHASE_ORDER.
+
+    Returns a list of ``(phase_key, phase_label, steps)`` tuples.
+    Empty phases are omitted.
+    """
+    buckets: dict[str, list[Step]] = {}
+    for step in steps:
+        phase = infer_phase(step)
+        buckets.setdefault(phase, []).append(step)
+
+    result = []
+    for phase_key in PHASE_ORDER:
+        if phase_key in buckets:
+            result.append((phase_key, PHASE_LABELS[phase_key], buckets[phase_key]))
+    # Include any phases not in PHASE_ORDER (defensive).
+    for phase_key, phase_steps in buckets.items():
+        if phase_key not in PHASE_ORDER:
+            label = phase_key.replace("_", " ").capitalize()
+            result.append((phase_key, label, phase_steps))
+    return result

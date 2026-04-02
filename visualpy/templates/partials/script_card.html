@@ -22,7 +22,21 @@
     {% if script.summary %}
     <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5 line-clamp-2">{{ script.summary }}</p>
     {% endif %}
-    <div class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+    <!-- Business view: phase summary -->
+    <div x-show="biz" class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+        <span>{{ script.steps|length }} steps</span>
+        {% set phases = group_steps_by_phase(script.steps) %}
+        {% if phases %}
+        <span class="text-gray-300 dark:text-gray-600">|</span>
+        {% for phase_key, phase_label, phase_steps in phases %}
+        <span class="px-1 py-0.5 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">{{ phase_label.split(" & ")[0].split(" ")[0] }} ({{ phase_steps|length }})</span>
+        {% if not loop.last %}<span class="text-gray-300 dark:text-gray-600">&rarr;</span>{% endif %}
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- Technical view: type badges -->
+    <div x-show="!biz" class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
         <span>{{ script.steps|length }} steps</span>
         {% if script.steps %}
         <span class="text-gray-300 dark:text-gray-600">|</span>
@@ -41,7 +55,7 @@
             {% elif t == 'output' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
             {% elif t == 'transform' %}bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400
             {% endif %}
-            rounded"><span x-show="biz">{{ biz_labels.get(t, t) }}</span><span x-show="!biz">{{ tech_labels_short.get(t, t) }}</span></span>
+            rounded">{{ tech_labels_short.get(t, t) }}</span>
         {% endfor %}
         {% endif %}
         {% for svc in script.services %}

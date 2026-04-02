@@ -9,6 +9,7 @@ from visualpy.mermaid import (
     _sanitize_id,
     _step_node,
     importance_score,
+    pedagogical_flow,
     project_graph,
     script_flow,
 )
@@ -619,3 +620,103 @@ def test_project_graph_business_connections():
     result_tech = project_graph(project, business=False)
     assert '"uses"' in result_biz
     assert '"import"' in result_tech
+
+
+# --- pedagogical_flow ---
+
+
+def test_pedagogical_empty_script():
+    script = AnalyzedScript(path="empty.py", steps=[])
+    result = pedagogical_flow(script)
+    assert "No steps detected" in result
+
+
+def test_pedagogical_single_phase():
+    steps = [Step(line_number=i, type="transform", description=f"op{i}") for i in range(5)]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert "graph LR" in result
+    assert "phase_processing" in result
+    assert "5 steps" in result
+    # No arrows for single phase
+    assert "-->" not in result
+
+
+def test_pedagogical_multiple_phases():
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),    # setup
+        Step(line_number=2, type="transform", description=".split()"),          # processing
+        Step(line_number=3, type="file_io", description="json.dump()"),         # storage
+        Step(line_number=4, type="output", description="print()"),              # reporting
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert "phase_setup" in result
+    assert "phase_processing" in result
+    assert "phase_storage" in result
+    assert "phase_reporting" in result
+    assert "-->" in result
+
+
+def test_pedagogical_is_lr():
+    steps = [Step(line_number=1, type="output", description="print()")]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert result.startswith("graph LR")
+
+
+def test_pedagogical_shows_step_counts():
+    steps = [Step(line_number=i, type="api_call", description="requests.get()") for i in range(3)]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert "3 steps" in result
+
+
+def test_pedagogical_single_step_word():
+    steps = [Step(line_number=1, type="output", description="print()")]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert "1 step" in result
+    assert "1 steps" not in result
+
+
+def test_pedagogical_omits_empty_phases():
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),    # setup
+        Step(line_number=2, type="output", description="print()"),              # reporting
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    # Check for node definitions (with brackets), not just classDef mentions.
+    assert 'phase_setup["' in result
+    assert 'phase_reporting["' in result
+    assert 'phase_processing["' not in result
+    assert 'phase_storage["' not in result
+
+
+def test_pedagogical_has_classdefs():
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    assert "classDef phase_setup" in result
+
+
+def test_pedagogical_phase_order():
+    """Phases appear in canonical order regardless of step order."""
+    steps = [
+        Step(line_number=1, type="output", description="print()"),              # reporting
+        Step(line_number=2, type="api_call", description="requests.get()"),    # setup
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = pedagogical_flow(script)
+    setup_pos = result.index("phase_setup")
+    reporting_pos = result.index("phase_reporting")
+    assert setup_pos < reporting_pos
+
+
+def test_pedagogical_with_hello_fixture(hello_script, fixtures_dir):
+    script = analyze_file(hello_script, fixtures_dir)
+    result = pedagogical_flow(script)
+    assert "graph LR" in result
+    # hello.py has multiple step types, should have multiple phases
+    assert "-->" in result

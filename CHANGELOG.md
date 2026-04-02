@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Translated UI labels: "External Service" not "API Call", "Runs daily at midnight" not "0 0 * * *", "AWS credentials" not "AWS_SECRET_ACCESS_KEY"
 - Jinja2 template globals for translation functions — eliminates duplicated label dicts
 - Per-step error isolation in business mode — one bad translation doesn't kill the whole diagram
+- Phase inference — steps grouped by business intent (Setup, Processing, Storage, Error Handling, Reporting) instead of function names
+- Pedagogical diagram — simple 3-5 phase pipeline replaces 50-node flowcharts in business view
+- Progressive disclosure — business view shows summary first, phase accordions, then collapsed technical diagram
+- Layout restructure — business view is a completely different layout (no sidebar, no grid, narrative-first)
 - `--from-json` flag for `serve` command — load pre-computed analysis from JSON file
 - Dockerfile + docker-compose for public demo deployment (pre-baked LLM summaries)
 - Compact mode for script flow diagrams — functions with >8 steps collapse to summary nodes

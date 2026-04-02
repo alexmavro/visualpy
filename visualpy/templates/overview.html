@@ -34,11 +34,30 @@
 
     <!-- Project graph (only when multiple scripts with connections) -->
     {% if project.scripts|length > 1 %}
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h2 class="text-lg font-semibold mb-2">
-            <span x-show="biz">How Scripts Connect</span>
-            <span x-show="!biz">Dependency Graph</span>
-        </h2>
+    <!-- Business view: collapsed graph -->
+    <details x-show="biz" class="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <summary class="p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition rounded-lg flex items-center justify-between">
+            <span class="text-lg font-semibold">How Scripts Connect</span>
+            <span class="text-sm text-gray-400">(click to expand)</span>
+        </summary>
+        <div class="px-6 pb-6">
+            <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">Click a script to see its flow</p>
+            <script id="graph-biz-collapsed" type="text/plain">{{ graph_biz|default(graph) }}</script>
+            <div class="overflow-x-auto">
+                <pre class="mermaid-deferred" id="mermaid-graph-biz-collapsed"></pre>
+            </div>
+            <div class="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <div class="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 dark:bg-green-900 border-2 border-green-600"></span> Starting script</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500"></span> Supporting script</span>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <!-- Technical view: full graph -->
+    <div x-show="!biz" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h2 class="text-lg font-semibold mb-2">Dependency Graph</h2>
         <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">Click a script to see its flow</p>
         <script id="graph-tech" type="text/plain">{{ graph }}</script>
         <script id="graph-biz" type="text/plain">{{ graph_biz|default(graph) }}</script>
@@ -47,17 +66,10 @@
 {{ graph }}
             </pre>
         </div>
-        <!-- Legend for entry points -->
         <div class="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
             <div class="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
-                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 dark:bg-green-900 border-2 border-green-600"></span>
-                    <span x-show="biz">Starting script</span>
-                    <span x-show="!biz">Entry point</span>
-                </span>
-                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500"></span>
-                    <span x-show="biz">Supporting script</span>
-                    <span x-show="!biz">Helper script</span>
-                </span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 dark:bg-green-900 border-2 border-green-600"></span> Entry point</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500"></span> Helper script</span>
             </div>
         </div>
     </div>
@@ -132,37 +144,61 @@
 {% block scripts %}
 <script>
 window.switchViewMode = async function(isBiz) {
-    if (!window.mermaidModule) return;
-
-    var srcId = isBiz ? 'graph-biz' : 'graph-tech';
-    var src = document.getElementById(srcId);
-    if (!src) return;
-
-    var el = document.querySelector('.mermaid');
-    if (!el) return;
-
-    var code = src.textContent.trim();
-    el.setAttribute('data-mermaid-src', code);
-    el.removeAttribute('data-processed');
-    el.innerHTML = code;
-
-    try {
-        await window.mermaidModule.run({nodes: [el]});
-    } catch (err) {
-        console.error('[visualpy] Mermaid re-render failed:', err);
-        el.innerHTML = '<p class="text-sm text-red-600 dark:text-red-400">Diagram failed to render. Try refreshing the page.</p>';
+    if (!window.mermaidModule) {
+        console.warn('[visualpy] View toggled before Mermaid loaded');
+        return;
+    }
+    if (!isBiz) {
+        var src = document.getElementById('graph-tech');
+        var el = document.querySelector('[x-show="!biz"] .mermaid');
+        if (src && el) {
+            var code = src.textContent.trim();
+            el.setAttribute('data-mermaid-src', code);
+            el.removeAttribute('data-processed');
+            el.innerHTML = code;
+            try { await window.mermaidModule.run({nodes: [el]}); }
+            catch (err) {
+                console.error('[visualpy] Mermaid re-render failed:', err);
+                el.innerHTML = '<p class="text-sm text-red-600 dark:text-red-400">Diagram failed to render. Try refreshing the page.</p>';
+            }
+        }
     }
 };
 
-// If user previously selected business mode, re-render once mermaid is ready.
-if (localStorage.getItem('viewMode') !== 'technical') {
-    var _initCheck = setInterval(function() {
-        if (window.mermaidModule) {
-            clearInterval(_initCheck);
-            window.switchViewMode(true);
-        }
-    }, 50);
-    setTimeout(function() { clearInterval(_initCheck); }, 5000);
-}
+// Render collapsed mermaid graphs when their <details> opens.
+document.addEventListener('toggle', function(e) {
+    if (!e.target.querySelector || !e.target.open) return;
+    var el = e.target.querySelector('.mermaid-deferred') || e.target.querySelector('.mermaid');
+    if (!el || el.querySelector('svg')) return;
+    var src = e.target.querySelector('script[type="text/plain"]');
+    if (!src) return;
+
+    function doRender() {
+        var code = src.textContent.trim();
+        el.className = 'mermaid';
+        el.setAttribute('data-mermaid-src', code);
+        el.removeAttribute('data-processed');
+        el.innerHTML = code;
+        window.mermaidModule.run({nodes: [el]}).catch(function(err) {
+            console.error('[visualpy] Mermaid render failed:', err);
+            el.innerHTML = '<p class="text-sm text-red-600 dark:text-red-400">Diagram failed to render. Try refreshing the page.</p>';
+        });
+    }
+
+    if (window.mermaidModule) {
+        doRender();
+    } else {
+        el.innerHTML = '<p class="text-sm text-gray-400 dark:text-gray-500">Loading diagram...</p>';
+        var retry = setInterval(function() {
+            if (window.mermaidModule) { clearInterval(retry); doRender(); }
+        }, 100);
+        setTimeout(function() {
+            clearInterval(retry);
+            if (!el.querySelector('svg')) {
+                el.innerHTML = '<p class="text-sm text-gray-400 dark:text-gray-500">Diagram library could not load. Check your connection and refresh.</p>';
+            }
+        }, 5000);
+    }
+}, true);
 </script>
 {% endblock %}
