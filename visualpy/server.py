@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -12,6 +13,15 @@ from fastapi.templating import Jinja2Templates
 
 from visualpy.mermaid import importance_score, project_graph, script_flow
 from visualpy.models import AnalyzedProject
+from visualpy.translate import (
+    BUSINESS_LABELS,
+    TECHNICAL_LABELS,
+    TECHNICAL_LABELS_SHORT,
+    translate_connection,
+    translate_secret,
+    translate_step,
+    translate_trigger,
+)
 
 _PACKAGE_DIR = Path(__file__).parent
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
@@ -23,12 +33,31 @@ def create_app(project: AnalyzedProject) -> FastAPI:
     app = FastAPI(title="visualpy", docs_url=None, redoc_url=None)
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-    # Pre-compute project graph once (graceful fallback on error).
+    # Register translation functions as Jinja2 globals for all templates.
+    templates.env.globals["biz_labels"] = BUSINESS_LABELS
+    templates.env.globals["tech_labels"] = TECHNICAL_LABELS
+    templates.env.globals["tech_labels_short"] = TECHNICAL_LABELS_SHORT
+    templates.env.globals["translate_step"] = translate_step
+    templates.env.globals["translate_trigger"] = translate_trigger
+    templates.env.globals["translate_secret"] = translate_secret
+    templates.env.globals["translate_connection"] = translate_connection
+
+    # Fallback diagrams for error cases.
+    _GRAPH_FALLBACK = 'graph LR\n  error["Graph generation failed"]'
+    _FLOW_FALLBACK = 'graph TB\n  error["Flow generation failed for this script"]'
     try:
         app.state.project_graph = project_graph(project)
     except Exception as exc:
+        traceback.print_exc(file=sys.stderr)
         print(f"[visualpy] Warning: failed to build project graph: {exc}", file=sys.stderr)
-        app.state.project_graph = 'graph LR\n  error["Graph generation failed"]'
+        app.state.project_graph = _GRAPH_FALLBACK
+    try:
+        app.state.project_graph_biz = project_graph(project, business=True)
+    except Exception as exc:
+        traceback.print_exc(file=sys.stderr)
+        print(f"[visualpy] Warning: failed to build business project graph: {exc}", file=sys.stderr)
+        # Fall back to technical graph (better than error placeholder).
+        app.state.project_graph_biz = app.state.project_graph
 
     app.state.project = project
     app.state.scripts_by_path = {s.path: s for s in project.scripts}
@@ -68,6 +97,7 @@ def create_app(project: AnalyzedProject) -> FastAPI:
             context={
                 "project": project,
                 "graph": app.state.project_graph,
+                "graph_biz": app.state.project_graph_biz,
                 "sorted_scripts": scored,
                 "key_paths": key_paths,
             },
@@ -87,16 +117,25 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 context={"message": f"Script not found: {path}", "code": 404},
                 status_code=404,
             )
-        try:
-            flow_detailed = script_flow(script)
-        except Exception as exc:
-            print(f"[visualpy] Warning: failed to build detailed flow for {path}: {exc}", file=sys.stderr)
-            flow_detailed = 'graph TB\n  error["Flow generation failed for this script"]'
-        try:
-            flow_compact = script_flow(script, compact=True)
-        except Exception as exc:
-            print(f"[visualpy] Warning: failed to build compact flow for {path}: {exc}", file=sys.stderr)
-            flow_compact = 'graph TB\n  error["Compact flow generation failed"]'
+        def _gen_flow(**kwargs: object) -> str:
+            try:
+                return script_flow(script, **kwargs)
+            except Exception as exc:
+                traceback.print_exc(file=sys.stderr)
+                label = ", ".join(f"{k}={v}" for k, v in kwargs.items()) or "detailed"
+                print(f"[visualpy] Warning: failed to build {label} flow for {path}: {exc}", file=sys.stderr)
+                return _FLOW_FALLBACK
+
+        flow_detailed = _gen_flow()
+        flow_compact = _gen_flow(compact=True)
+        # Business flows fall back to their technical counterparts on error.
+        flow_detailed_biz = _gen_flow(business=True)
+        if flow_detailed_biz == _FLOW_FALLBACK:
+            flow_detailed_biz = flow_detailed
+        flow_compact_biz = _gen_flow(compact=True, business=True)
+        if flow_compact_biz == _FLOW_FALLBACK:
+            flow_compact_biz = flow_compact
+
         total_steps = len(script.steps)
         return templates.TemplateResponse(
             request,
@@ -107,6 +146,8 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 "flow": flow_compact if total_steps > 30 else flow_detailed,
                 "flow_detailed": flow_detailed,
                 "flow_compact": flow_compact,
+                "flow_detailed_biz": flow_detailed_biz,
+                "flow_compact_biz": flow_compact_biz,
                 "total_steps": total_steps,
                 "default_compact": total_steps > 30,
             },

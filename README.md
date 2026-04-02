@@ -4,7 +4,8 @@
 [![Tests](https://github.com/Lexi-Energy/visualpy/actions/workflows/ci.yml/badge.svg)](https://github.com/Lexi-Energy/visualpy/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 
-Auto-visualise Python automations for non-technical stakeholders.
+Auto-visualise Python automations so that even non-dev people can understand what is going on.
+(for example when an agentic system created scripts, or a teammember, or you vibe-coded sth. and have no idea how to give feedback now.)
 
 Drop a folder of Python scripts, get a visual breakdown of what they do, how they connect, and what they need. No execution required, no config needed.
 

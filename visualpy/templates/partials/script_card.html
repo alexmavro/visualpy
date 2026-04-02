@@ -1,11 +1,4 @@
-{% set type_labels = {
-    "api_call": "API",
-    "file_io": "File",
-    "db_op": "DB",
-    "decision": "Decision",
-    "output": "Output",
-    "transform": "Transform",
-} %}
+{# type_labels replaced by biz_labels / tech_labels_short Jinja2 globals from server.py #}
 
 <a href="/script/{{ script.path }}"
    class="block bg-white dark:bg-gray-800 rounded-lg shadow p-4 hover:shadow-md hover:ring-1 hover:ring-blue-300 dark:hover:ring-blue-600 transition">
@@ -16,7 +9,10 @@
             <span class="px-1.5 py-0.5 text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 rounded">key</span>
             {% endif %}
             {% if script.is_entry_point %}
-            <span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">entry</span>
+            <span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
+                <span x-show="biz">start</span>
+                <span x-show="!biz">entry</span>
+            </span>
             {% endif %}
         </span>
     </div>
@@ -45,7 +41,7 @@
             {% elif t == 'output' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
             {% elif t == 'transform' %}bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400
             {% endif %}
-            rounded">{{ type_labels.get(t, t) }}</span>
+            rounded"><span x-show="biz">{{ biz_labels.get(t, t) }}</span><span x-show="!biz">{{ tech_labels_short.get(t, t) }}</span></span>
         {% endfor %}
         {% endif %}
         {% for svc in script.services %}

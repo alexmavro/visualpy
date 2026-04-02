@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" x-data="{ dark: localStorage.getItem('theme') === 'dark' }"
-      x-init="$watch('dark', v => { localStorage.setItem('theme', v ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', v); window.reRenderMermaid && window.reRenderMermaid(v) }); document.documentElement.classList.toggle('dark', dark)"
+<html lang="en" x-data="{ dark: localStorage.getItem('theme') === 'dark', biz: localStorage.getItem('viewMode') !== 'technical' }"
+      x-init="$watch('dark', v => { localStorage.setItem('theme', v ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', v); window.reRenderMermaid && window.reRenderMermaid(v) }); $watch('biz', v => { localStorage.setItem('viewMode', v ? 'business' : 'technical'); window.switchViewMode && window.switchViewMode(v) }); document.documentElement.classList.toggle('dark', dark)"
       :class="{ 'dark': dark }">
 <head>
     <meta charset="UTF-8">
@@ -26,14 +26,24 @@
                 </a>
                 {% block breadcrumb %}{% endblock %}
             </div>
-            <button @click="dark = !dark"
-                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                    aria-label="Toggle dark mode"
-                    id="dark-toggle"
-                    title="Toggle dark mode">
-                <span x-show="!dark" class="text-xl">&#9789;</span>
-                <span x-show="dark" class="text-xl">&#9788;</span>
-            </button>
+            <div class="flex items-center gap-2">
+                <button @click="biz = !biz"
+                        class="px-2.5 py-1.5 rounded-lg text-xs font-medium border transition"
+                        :class="biz ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'"
+                        id="view-toggle"
+                        :title="biz ? 'Switch to technical view' : 'Switch to business view'">
+                    <span x-show="biz">Business</span>
+                    <span x-show="!biz">Technical</span>
+                </button>
+                <button @click="dark = !dark"
+                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                        aria-label="Toggle dark mode"
+                        id="dark-toggle"
+                        title="Toggle dark mode">
+                    <span x-show="!dark" class="text-xl">&#9789;</span>
+                    <span x-show="dark" class="text-xl">&#9788;</span>
+                </button>
+            </div>
         </div>
     </nav>
 

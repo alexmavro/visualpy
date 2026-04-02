@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 from visualpy.models import AnalyzedProject, AnalyzedScript, ScriptConnection, Step
+from visualpy.translate import BUSINESS_LABELS, translate_connection, translate_step
 
 # Short labels for step types (used in compact nodes and potentially templates).
 _TYPE_LABELS: dict[str, str] = {
@@ -83,21 +84,29 @@ def _escape_label(text: str, max_len: int = 60) -> str:
     )
 
 
-def _step_node(step: Step, script_stem: str) -> str:
+def _step_node(step: Step, script_stem: str, *, business: bool = False) -> str:
     """Generate a Mermaid node definition for a single step."""
     node_id = f"n_{_SPECIAL_CHARS.sub('_', script_stem)}_{step.line_number}"
 
-    # Build a human-readable label prefix per type.
-    prefixes = {
-        "api_call": "API: ",
-        "file_io": "File: ",
-        "db_op": "DB: ",
-        "decision": "",
-        "output": "Output: ",
-        "transform": "Transform: ",
-    }
-    prefix = prefixes.get(step.type, "")
-    label = _escape_label(f"{prefix}{step.description}")
+    if business:
+        # Business mode: translated label, no type prefix (shape/color conveys type).
+        # Per-step isolation: if translation fails, fall back to raw description.
+        try:
+            label = _escape_label(translate_step(step))
+        except Exception:
+            label = _escape_label(step.description)
+    else:
+        # Technical mode: type prefix + raw description.
+        prefixes = {
+            "api_call": "API: ",
+            "file_io": "File: ",
+            "db_op": "DB: ",
+            "decision": "",
+            "output": "Output: ",
+            "transform": "Transform: ",
+        }
+        prefix = prefixes.get(step.type, "")
+        label = _escape_label(f"{prefix}{step.description}")
 
     shape_tpl = _STEP_SHAPES.get(step.type)
     if shape_tpl is None:
@@ -112,20 +121,24 @@ def _step_node(step: Step, script_stem: str) -> str:
     return node_def
 
 
-def _compact_function_node(func_name: str, steps: list[Step], stem: str) -> str:
+def _compact_function_node(
+    func_name: str, steps: list[Step], stem: str, *, business: bool = False
+) -> str:
     """Generate a single Mermaid node summarising a collapsed function."""
     node_id = f"n_{_SPECIAL_CHARS.sub('_', stem)}_{_SPECIAL_CHARS.sub('_', func_name)}_compact"
 
+    labels = BUSINESS_LABELS if business else _TYPE_LABELS
     counts = Counter(s.type for s in steps)
     # Top 4 types by count, descending.
     top = counts.most_common(4)
-    parts = [f"{n} {_TYPE_LABELS.get(t, t)}" for t, n in top]
+    parts = [f"{n} {labels.get(t, t)}" for t, n in top]
     if len(counts) > 4:
         parts.append(f"+{len(counts) - 4} more")
     type_summary = ", ".join(parts)
     total = len(steps)
 
-    raw_label = f"{func_name}() — {total} steps ({type_summary})"
+    display_name = func_name if business else f"{func_name}()"
+    raw_label = f"{display_name} — {total} steps ({type_summary})"
     label = _escape_label(raw_label, max_len=100)
     return f'{node_id}[["{label}"]]:::compact'
 
@@ -148,7 +161,7 @@ def importance_score(script: AnalyzedScript, project: AnalyzedProject) -> int:
     return score
 
 
-def project_graph(project: AnalyzedProject) -> str:
+def project_graph(project: AnalyzedProject, *, business: bool = False) -> str:
     """Generate a Mermaid graph showing scripts as nodes and connections as edges."""
     lines: list[str] = ["graph LR"]
 
@@ -182,7 +195,8 @@ def project_graph(project: AnalyzedProject) -> str:
     for conn in project.connections:
         src = _sanitize_id(conn.source)
         tgt = _sanitize_id(conn.target)
-        label = _escape_label(conn.type)
+        edge_label = translate_connection(conn.type) if business else conn.type
+        label = _escape_label(edge_label)
         lines.append(f'  {src} -->|"{label}"| {tgt}')
 
     # Click handlers: navigate to script view.
@@ -199,11 +213,14 @@ def script_flow(
     *,
     compact: bool = False,
     compact_threshold: int = 8,
+    business: bool = False,
 ) -> str:
     """Generate a Mermaid flowchart for a single script's steps.
 
     When *compact* is True, functions with more than *compact_threshold*
-    steps are collapsed into a single summary node.
+    steps are collapsed into a single summary node.  When *business* is
+    True, node labels use plain-English translations instead of raw code
+    descriptions.
     """
     lines: list[str] = ["graph TB"]
 
@@ -226,16 +243,17 @@ def script_flow(
     for func_name, steps in func_steps.items():
         # Compact mode: collapse large functions into a single node.
         if compact and func_name != "_module_" and len(steps) > compact_threshold:
-            lines.append(f"  {_compact_function_node(func_name, steps, stem)}")
+            lines.append(f"  {_compact_function_node(func_name, steps, stem, business=business)}")
             continue
 
         if func_name != "_module_":
             sg_id = _sanitize_id(f"{stem}_{func_name}")
-            label = _escape_label(func_name + "()")
+            display_name = func_name if business else func_name + "()"
+            label = _escape_label(display_name)
             lines.append(f'  subgraph {sg_id}["{label}"]')
 
         for step in steps:
-            lines.append(f"    {_step_node(step, stem)}")
+            lines.append(f"    {_step_node(step, stem, business=business)}")
             node_id = f"n_{_SPECIAL_CHARS.sub('_', stem)}_{step.line_number}"
             escaped_path = script.path.replace('"', '\\"')
             click_lines.append(

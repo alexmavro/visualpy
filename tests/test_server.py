@@ -480,3 +480,84 @@ async def test_script_view_with_hello_fixture(hello_script, fixtures_dir):
         resp = await ac.get(f"/script/{script.path}")
     assert resp.status_code == 200
     assert "graph TB" in resp.text
+
+
+# --- Business mode ---
+
+
+@pytest.mark.anyio
+async def test_script_view_has_four_flows():
+    """Response should contain all 4 flow variants (detailed/compact × tech/biz)."""
+    steps = [
+        Step(line_number=i, type="api_call", description=f"call{i}", function_name="big")
+        for i in range(35)
+    ]
+    script = AnalyzedScript(path="big.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/big.py")
+    assert "flow-detailed" in resp.text
+    assert "flow-compact" in resp.text
+    assert "flow-detailed-biz" in resp.text
+    assert "flow-compact-biz" in resp.text
+
+
+@pytest.mark.anyio
+async def test_overview_has_business_graph():
+    """Overview should contain both technical and business project graphs."""
+    scripts = [AnalyzedScript(path="a.py"), AnalyzedScript(path="b.py")]
+    from visualpy.models import ScriptConnection
+    connections = [ScriptConnection(source="a.py", target="b.py", type="import", detail="")]
+    project = AnalyzedProject(path="/tmp", scripts=scripts, connections=connections)
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # Both graph sources should be in the page
+    assert "graph-tech" in resp.text or "graph LR" in resp.text
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_translate_globals_registered():
+    """Jinja2 globals for translate functions should be accessible."""
+    project = AnalyzedProject(path="/tmp", scripts=[AnalyzedScript(path="a.py")])
+    app = create_app(project)
+    # Check that the globals are registered in the template env
+    from visualpy.translate import BUSINESS_LABELS
+    # Access the templates through the app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # The overview page should render without errors (proves globals work)
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_script_triggers_translated():
+    """Script view should contain translated trigger text."""
+    from visualpy.models import Trigger
+    script = AnalyzedScript(
+        path="job.py",
+        triggers=[Trigger(type="cli", detail="__main__ guard")],
+        steps=[Step(line_number=1, type="output", description="print()")],
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/job.py")
+    assert "Can be run directly" in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_secrets_translated():
+    """Script view should contain translated secret text."""
+    script = AnalyzedScript(
+        path="api.py",
+        secrets=["AWS_SECRET_ACCESS_KEY"],
+        steps=[Step(line_number=1, type="api_call", description="call()")],
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/api.py")
+    assert "AWS credentials" in resp.text

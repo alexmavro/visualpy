@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Business/Technical view toggle — switch between plain-English and developer views (persisted in localStorage)
+- `translate.py` module — deterministic business-language translations for step descriptions, triggers, secrets, connection types
+- Business-mode Mermaid diagrams — 4 pre-rendered flow variants (detailed/compact × tech/business)
+- Translated UI labels: "External Service" not "API Call", "Runs daily at midnight" not "0 0 * * *", "AWS credentials" not "AWS_SECRET_ACCESS_KEY"
+- Jinja2 template globals for translation functions — eliminates duplicated label dicts
+- Per-step error isolation in business mode — one bad translation doesn't kill the whole diagram
 - `--from-json` flag for `serve` command — load pre-computed analysis from JSON file
 - Dockerfile + docker-compose for public demo deployment (pre-baked LLM summaries)
 - Compact mode for script flow diagrams — functions with >8 steps collapse to summary nodes

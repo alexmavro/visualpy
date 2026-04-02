@@ -1,0 +1,320 @@
+"""Deterministic translation of analysis output into business-friendly language."""
+
+from __future__ import annotations
+
+import re
+
+from visualpy.models import Step, Trigger
+
+# --- Type labels -----------------------------------------------------------
+
+BUSINESS_LABELS: dict[str, str] = {
+    "api_call": "External Service",
+    "file_io": "Read/Write File",
+    "db_op": "Database",
+    "decision": "Check",
+    "output": "Log/Notify",
+    "transform": "Data Processing",
+}
+
+TECHNICAL_LABELS: dict[str, str] = {
+    "api_call": "API Call",
+    "file_io": "File I/O",
+    "db_op": "Database",
+    "decision": "Decision",
+    "output": "Output",
+    "transform": "Transform",
+}
+
+# Short forms for compact cards (same as current script_card.html).
+TECHNICAL_LABELS_SHORT: dict[str, str] = {
+    "api_call": "API",
+    "file_io": "File",
+    "db_op": "DB",
+    "decision": "Decision",
+    "output": "Output",
+    "transform": "Transform",
+}
+
+# --- Step translation -------------------------------------------------------
+
+# api_call: method hints → verb
+_API_VERBS: list[tuple[str, str]] = [
+    (".post(", "Sends data to"),
+    (".put(", "Updates data on"),
+    (".patch(", "Updates data on"),
+    (".delete(", "Removes data from"),
+    ("authorize(", "Authenticates with"),
+]
+# default for .get() and anything else → "Fetches data from"
+
+
+def translate_step(step: Step) -> str:
+    """Return a plain-English one-liner for a step."""
+    desc = step.description
+    svc_name = step.service.name if step.service else None
+
+    if step.type == "api_call":
+        return _translate_api(desc, svc_name)
+    if step.type == "file_io":
+        return _translate_file(desc)
+    if step.type == "db_op":
+        return _translate_db(desc)
+    if step.type == "decision":
+        return _translate_decision(desc)
+    if step.type == "output":
+        return _translate_output(desc)
+    if step.type == "transform":
+        return _translate_transform(desc)
+    return BUSINESS_LABELS.get(step.type, step.type.replace("_", " ").capitalize())
+
+
+def _translate_api(desc: str, svc_name: str | None) -> str:
+    target = svc_name or "external service"
+    for pattern, verb in _API_VERBS:
+        if pattern in desc:
+            return f"{verb} {target}"
+    return f"Fetches data from {target}"
+
+
+def _translate_file(desc: str) -> str:
+    dl = desc.lower()
+    # Write signals
+    if any(kw in dl for kw in (".dump(", ".to_csv", ".to_json", ".to_excel",
+                                ".write(", ".write_text(", "'w'", "\"w\"")):
+        return "Saves data to file"
+    # Read signals
+    if any(kw in dl for kw in (".load(", ".read_csv", ".read_json", ".read_excel",
+                                ".read(", ".read_text(", "'r'", "\"r\"")):
+        return "Reads data from file"
+    if "open()" in dl or "open(" in dl:
+        return "Opens file"
+    return "Reads/writes file"
+
+
+def _translate_db(desc: str) -> str:
+    dl = desc.lower()
+    if any(kw in dl for kw in (".insert", ".add(", ".commit(", ".update(",
+                                ".create(", ".save(")):
+        return "Saves to database"
+    return "Queries database"
+
+
+def _translate_decision(desc: str) -> str:
+    if desc.startswith("try/except"):
+        return "Handles potential errors"
+    if desc.startswith("for "):
+        # "for target in iter_expr" or "for (k, v) in ..." → "Processes each target/k"
+        m = re.match(r"for\s+\(?(\w+)", desc)
+        if m:
+            return f"Processes each {m.group(1)}"
+        return "Repeats for each item"
+    if desc.startswith("while "):
+        return "Repeats while condition is met"
+    if desc.startswith("if "):
+        # Strip the "if " prefix, simplify
+        condition = desc[3:].strip()
+        return f"Checks: {_simplify_condition(condition)}"
+    return "Checks a condition"
+
+
+def _simplify_condition(cond: str) -> str:
+    """Best-effort simplification of if-conditions for business readers."""
+    # "not X" → "X is missing"
+    if cond.startswith("not "):
+        subject = cond[4:].strip()
+        # "not os.path.exists(...)" → "file doesn't exist"
+        if "os.path.exists" in subject or "Path(" in subject:
+            return "file doesn't exist"
+        return f"{_clean_var(subject)} is missing"
+    # "X is None" → "X is empty"
+    if " is None" in cond:
+        subject = cond.split(" is None")[0].strip()
+        return f"{_clean_var(subject)} is empty"
+    # Truncate long conditions
+    if len(cond) > 60:
+        return cond[:57] + "..."
+    return cond
+
+
+def _clean_var(name: str) -> str:
+    """Strip common prefixes and make variable names slightly more readable."""
+    # Strip self. prefix
+    if name.startswith("self."):
+        name = name[5:]
+    # Strip leading underscores
+    name = name.lstrip("_")
+    return name or "value"
+
+
+def _translate_output(desc: str) -> str:
+    dl = desc.lower()
+    if "logger." in dl or "logging." in dl:
+        if "error" in dl:
+            return "Records an error"
+        if "warning" in dl:
+            return "Records a warning"
+        return "Records activity"
+    if "print(" in dl:
+        return "Displays message"
+    if "send" in dl:
+        return "Sends notification"
+    return "Produces output"
+
+
+def _translate_transform(desc: str) -> str:
+    dl = desc.lower()
+    if "list comprehension" in dl or "dict comprehension" in dl or "set comprehension" in dl:
+        return "Builds a collection of items"
+    if ".split(" in dl:
+        return "Splits text into parts"
+    if ".join(" in dl:
+        return "Joins text together"
+    if ".strip(" in dl or ".lower(" in dl or ".upper(" in dl or ".replace(" in dl:
+        return "Cleans up text"
+    if "sorted(" in dl:
+        return "Sorts data"
+    if "int(" in dl or "float(" in dl or "str(" in dl:
+        return "Converts data type"
+    if "len(" in dl:
+        return "Counts items"
+    if ".encode(" in dl or ".decode(" in dl:
+        return "Converts text encoding"
+    if ".loads(" in dl or ".dumps(" in dl:
+        return "Converts data format"
+    return "Processes data"
+
+
+# --- Trigger translation ----------------------------------------------------
+
+# Common cron schedules
+_CRON_PATTERNS: list[tuple[str, str]] = [
+    ("* * * * *", "Runs every minute"),
+    ("0 * * * *", "Runs every hour"),
+    ("0 0 * * *", "Runs daily at midnight"),
+    ("0 0 * * 0", "Runs weekly on Sunday"),
+    ("0 0 1 * *", "Runs monthly"),
+]
+
+_CRON_INTERVAL = re.compile(r"^\*/(\d+)\s")
+
+
+def translate_trigger(trigger: Trigger) -> str:
+    """Return a plain-English description for a trigger."""
+    detail = trigger.detail
+    ttype = trigger.type.lower()
+
+    if ttype == "cron" or ttype == "schedule":
+        return _translate_cron(detail)
+    if ttype == "cli":
+        return _translate_cli(detail)
+    if ttype == "webhook":
+        return _translate_webhook(detail)
+    if ttype == "import":
+        return "Used by other scripts"
+    if ttype == "manual":
+        return "Run manually"
+    return trigger.type.capitalize()
+
+
+def _translate_cron(detail: str) -> str:
+    for pattern, human in _CRON_PATTERNS:
+        if pattern in detail:
+            return human
+    m = _CRON_INTERVAL.match(detail)
+    if m:
+        interval = int(m.group(1))
+        return f"Runs every {interval} minutes"
+    return "Runs on a schedule"
+
+
+def _translate_cli(detail: str) -> str:
+    if "__main__" in detail:
+        return "Can be run directly"
+    if "argparse" in detail:
+        return "Accepts command-line options"
+    if "click" in detail or "typer" in detail:
+        dl = detail.lower()
+        # "click: command_name" → "Command: command_name"
+        for prefix in ("click:", "typer:"):
+            if prefix in dl:
+                name = detail.split(":", 1)[-1].strip()
+                if name:
+                    return f"Command: {name}"
+        return "Run from command line"
+    return "Run from command line"
+
+
+def _translate_webhook(detail: str) -> str:
+    if "modal" in detail.lower():
+        # "modal endpoint: name" → "Cloud function: name"
+        name = detail.split(":", 1)[-1].strip() if ":" in detail else detail
+        return f"Cloud function: {name}"
+    # "POST /path" or "/path"
+    path = detail
+    for method in ("POST ", "GET ", "PUT ", "DELETE ", "PATCH "):
+        if detail.upper().startswith(method):
+            path = detail[len(method):].strip()
+            break
+    if path:
+        return f"Triggered by web request to {path}"
+    return "Triggered by web request"
+
+
+# --- Secret translation -----------------------------------------------------
+
+_SECRET_PREFIXES: list[tuple[str, str]] = [
+    ("AWS_", "AWS"),
+    ("GOOGLE_", "Google"),
+    ("OPENAI_", "OpenAI"),
+    ("ANTHROPIC_", "Anthropic"),
+    ("APIFY_", "Apify"),
+    ("SLACK_", "Slack"),
+    ("PANDADOC_", "PandaDoc"),
+    ("INSTANTLY_", "Instantly"),
+    ("STRIPE_", "Stripe"),
+    ("TWILIO_", "Twilio"),
+    ("SENDGRID_", "SendGrid"),
+    ("GITHUB_", "GitHub"),
+    ("GITLAB_", "GitLab"),
+    ("AZURE_", "Azure"),
+    ("HF_", "Hugging Face"),
+    ("HUGGINGFACE_", "Hugging Face"),
+]
+
+_SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_CREDENTIALS", "_PASSWORD")
+
+
+def translate_secret(secret: str) -> str:
+    """Return a plain-English label for a secret/env var name."""
+    upper = secret.upper()
+
+    # Check known prefixes first
+    for prefix, label in _SECRET_PREFIXES:
+        if upper.startswith(prefix):
+            return f"{label} credentials"
+
+    # Check generic suffixes
+    for suffix in _SECRET_SUFFIXES:
+        if upper.endswith(suffix):
+            name = secret[: -len(suffix)].replace("_", " ").strip().title()
+            if name:
+                return f"{name} credentials"
+            return "API credentials"
+
+    return f"Configuration: {secret}"
+
+
+# --- Connection type translation --------------------------------------------
+
+_CONNECTION_LABELS: dict[str, str] = {
+    "import": "uses",
+    "file_io": "shares data with",
+    "subprocess": "launches",
+    "trigger": "triggers",
+}
+
+
+def translate_connection(conn_type: str) -> str:
+    """Return a business-friendly verb for a connection type."""
+    return _CONNECTION_LABELS.get(conn_type, conn_type)

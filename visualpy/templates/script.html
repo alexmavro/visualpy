@@ -1,13 +1,6 @@
 {% extends "base.html" %}
 
-{% set type_labels = {
-    "api_call": "API Call",
-    "file_io": "File I/O",
-    "db_op": "Database",
-    "decision": "Decision",
-    "output": "Output",
-    "transform": "Transform",
-} %}
+{# type_labels replaced by biz_labels / tech_labels Jinja2 globals from server.py #}
 
 {% block title %}visualpy - {{ script.path }}{% endblock %}
 
@@ -23,7 +16,10 @@
         <div class="flex items-center gap-3 mb-2">
             <h1 class="text-2xl font-bold">{{ script.path }}</h1>
             {% if script.is_entry_point %}
-            <span class="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-full">entry point</span>
+            <span class="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-full">
+                <span x-show="biz">Starting script</span>
+                <span x-show="!biz">entry point</span>
+            </span>
             {% endif %}
         </div>
         <div class="flex flex-wrap gap-4 text-sm">
@@ -34,11 +30,17 @@
             <span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs">{{ svc.name }}</span>
             {% endfor %}
             {% for trigger in script.triggers %}
-            <span class="px-2 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs">{{ trigger.type }}: {{ trigger.detail }}</span>
+            <span class="px-2 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs">
+                <span x-show="biz">{{ translate_trigger(trigger) }}</span>
+                <span x-show="!biz">{{ trigger.type }}: {{ trigger.detail }}</span>
+            </span>
             {% endfor %}
         </div>
         {% if script.signature %}
-        <p class="mt-2 text-sm font-mono text-gray-500 dark:text-gray-400">
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400" x-show="biz">
+            Requires: {% for name, info in script.signature.items() %}{{ name }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </p>
+        <p class="mt-2 text-sm font-mono text-gray-500 dark:text-gray-400" x-show="!biz">
             main({% for name, info in script.signature.items() %}{{ name }}{% if not loop.last %}, {% endif %}{% endfor %})
         </p>
         {% endif %}
@@ -66,6 +68,8 @@
                 </div>
                 <script id="flow-detailed" type="text/plain">{{ flow_detailed|default(flow) }}</script>
                 <script id="flow-compact" type="text/plain">{{ flow_compact|default(flow) }}</script>
+                <script id="flow-detailed-biz" type="text/plain">{{ flow_detailed_biz|default(flow_detailed|default(flow)) }}</script>
+                <script id="flow-compact-biz" type="text/plain">{{ flow_compact_biz|default(flow_compact|default(flow)) }}</script>
                 <div class="overflow-x-auto">
                     <pre class="mermaid">
 {{ flow }}
@@ -74,12 +78,17 @@
                 <!-- Color legend -->
                 <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                     <div class="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900 border border-blue-500"></span> API Call</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 dark:bg-green-900 border border-green-600"></span> File I/O</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900 border border-blue-500"></span>
+                            <span x-show="biz">External Service</span><span x-show="!biz">API Call</span></span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 dark:bg-green-900 border border-green-600"></span>
+                            <span x-show="biz">Read/Write File</span><span x-show="!biz">File I/O</span></span>
                         <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-purple-100 dark:bg-purple-900 border border-purple-500"></span> Database</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-orange-100 dark:bg-orange-900 border border-orange-500"></span> Decision</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-gray-100 dark:bg-gray-700 border border-gray-400"></span> Output</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-teal-100 dark:bg-teal-900 border border-teal-500"></span> Transform</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-orange-100 dark:bg-orange-900 border border-orange-500"></span>
+                            <span x-show="biz">Check</span><span x-show="!biz">Decision</span></span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-gray-100 dark:bg-gray-700 border border-gray-400"></span>
+                            <span x-show="biz">Log/Notify</span><span x-show="!biz">Output</span></span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-teal-100 dark:bg-teal-900 border border-teal-500"></span>
+                            <span x-show="biz">Data Processing</span><span x-show="!biz">Transform</span></span>
                     </div>
                 </div>
             </div>
@@ -92,7 +101,7 @@
                     {% for step in script.steps %}
                     <button onclick='showStepDetail({{ script.path|tojson }}, {{ step.line_number }})'
                             class="w-full text-left px-3 py-1.5 rounded text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2">
-                        <span class="text-gray-400 font-mono w-8 text-right shrink-0">L{{ step.line_number }}</span>
+                        <span class="text-gray-400 font-mono w-8 text-right shrink-0" x-show="!biz">L{{ step.line_number }}</span>
                         <span class="px-1.5 py-0.5 rounded text-xs font-medium
                             {% if step.type == 'api_call' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200
                             {% elif step.type == 'file_io' %}bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200
@@ -101,8 +110,12 @@
                             {% elif step.type == 'output' %}bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200
                             {% elif step.type == 'transform' %}bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200
                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200{% endif %}
-                            shrink-0">{{ type_labels.get(step.type, step.type) }}</span>
-                        <span class="truncate">{{ step.description }}</span>
+                            shrink-0">
+                            <span x-show="biz">{{ biz_labels.get(step.type, step.type) }}</span>
+                            <span x-show="!biz">{{ tech_labels.get(step.type, step.type) }}</span>
+                        </span>
+                        <span class="truncate" x-show="biz">{{ translate_step(step) }}</span>
+                        <span class="truncate" x-show="!biz">{{ step.description }}</span>
                     </button>
                     {% endfor %}
                 </div>
@@ -126,7 +139,7 @@
                 {% if script.services %}
                 <ul class="space-y-1 text-sm">
                     {% for svc in script.services %}
-                    <li>{{ svc.name }} <span class="text-gray-400">({{ svc.library }})</span></li>
+                    <li>{{ svc.name }} <span x-show="!biz" class="text-gray-400">({{ svc.library }})</span></li>
                     {% endfor %}
                 </ul>
                 {% else %}
@@ -136,11 +149,17 @@
 
             <!-- Secrets -->
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-                <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">Secrets</h3>
+                <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                    <span x-show="biz">Credentials</span>
+                    <span x-show="!biz">Secrets</span>
+                </h3>
                 {% if script.secrets %}
-                <ul class="space-y-1 text-sm font-mono">
+                <ul class="space-y-1 text-sm">
                     {% for secret in script.secrets %}
-                    <li>{{ secret }}</li>
+                    <li>
+                        <span x-show="biz">{{ translate_secret(secret) }}</span>
+                        <span x-show="!biz" class="font-mono">{{ secret }}</span>
+                    </li>
                     {% endfor %}
                 </ul>
                 {% else %}
@@ -148,9 +167,9 @@
                 {% endif %}
             </div>
 
-            <!-- Imports -->
+            <!-- Imports (technical view only) -->
             {% if script.imports_external or script.imports_internal %}
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div x-show="!biz" class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
                 <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">Imports</h3>
                 {% if script.imports_internal %}
                 <p class="text-xs text-gray-400 mb-1">Internal</p>
@@ -188,20 +207,20 @@ function showStepDetail(scriptPath, line) {
 }
 
 var _flowIsCompact = {{ 'true' if default_compact|default(false) else 'false' }};
+var _flowIsBusiness = localStorage.getItem('viewMode') !== 'technical';
 
-async function switchFlow() {
+function _getFlowSourceId() {
+    var scale = _flowIsCompact ? 'compact' : 'detailed';
+    return _flowIsBusiness ? 'flow-' + scale + '-biz' : 'flow-' + scale;
+}
+
+async function _renderCurrentFlow() {
     if (!window.mermaidModule) {
         console.warn('[visualpy] Mermaid not loaded yet');
         return;
     }
 
-    _flowIsCompact = !_flowIsCompact;
-    var btn = document.getElementById('flow-toggle');
-    if (btn) btn.textContent = _flowIsCompact ? 'Show Detailed' : 'Show Compact';
-
-    var src = _flowIsCompact
-        ? document.getElementById('flow-compact')
-        : document.getElementById('flow-detailed');
+    var src = document.getElementById(_getFlowSourceId());
     if (!src) return;
 
     var el = document.querySelector('.mermaid');
@@ -218,6 +237,30 @@ async function switchFlow() {
         console.error('[visualpy] Mermaid re-render failed:', err);
         el.innerHTML = '<p class="text-sm text-red-600 dark:text-red-400">Diagram failed to render. Try refreshing the page.</p>';
     }
+}
+
+async function switchFlow() {
+    _flowIsCompact = !_flowIsCompact;
+    var btn = document.getElementById('flow-toggle');
+    if (btn) btn.textContent = _flowIsCompact ? 'Show Detailed' : 'Show Compact';
+    await _renderCurrentFlow();
+}
+
+window.switchViewMode = async function(isBiz) {
+    _flowIsBusiness = isBiz;
+    await _renderCurrentFlow();
+};
+
+// If user previously selected business mode, re-render once mermaid is ready.
+if (_flowIsBusiness) {
+    var _initCheck = setInterval(function() {
+        if (window.mermaidModule) {
+            clearInterval(_initCheck);
+            _renderCurrentFlow();
+        }
+    }, 50);
+    // Safety: stop checking after 5 seconds.
+    setTimeout(function() { clearInterval(_initCheck); }, 5000);
 }
 </script>
 {% endblock %}

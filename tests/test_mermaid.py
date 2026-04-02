@@ -537,3 +537,85 @@ def test_script_flow_with_hello_fixture(hello_script, fixtures_dir):
     assert ":::fileio" in result
     assert ":::decision" in result
     assert "subgraph" in result  # hello.py has functions
+
+
+# --- business mode ---
+
+
+def test_step_node_business_uses_translation():
+    """business=True produces translated label instead of raw description."""
+    svc = Service(name="Google Sheets", library="gspread")
+    step = Step(line_number=10, type="api_call", description="gspread.authorize()", service=svc)
+    result = _step_node(step, "test", business=True)
+    assert "Authenticates with Google Sheets" in result
+    # Should NOT have the technical prefix
+    assert "API:" not in result
+
+
+def test_step_node_business_default_false():
+    """Default business=False still produces technical output."""
+    step = Step(line_number=10, type="api_call", description="requests.get()")
+    result_default = _step_node(step, "test")
+    result_explicit = _step_node(step, "test", business=False)
+    assert result_default == result_explicit
+    assert "API: requests.get()" in result_default
+
+
+def test_script_flow_business_drops_parens():
+    """business=True subgraph labels drop the () suffix."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()", function_name="fetch"),
+        Step(line_number=2, type="output", description="print()", function_name="fetch"),
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, business=True)
+    # Business: "fetch" not "fetch()"
+    assert '"fetch"' in result
+    assert '"fetch()"' not in result
+
+
+def test_script_flow_technical_keeps_parens():
+    """Default technical mode keeps () on subgraph labels."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()", function_name="fetch"),
+    ]
+    script = AnalyzedScript(path="test.py", steps=steps)
+    result = script_flow(script, business=False)
+    assert '"fetch()"' in result
+
+
+def test_compact_node_business_labels():
+    """business=True uses BUSINESS_LABELS in compact summary and drops ()."""
+    steps = [
+        Step(line_number=i, type="file_io", description=f"op{i}")
+        for i in range(3)
+    ]
+    result = _compact_function_node("save_data", steps, "test", business=True)
+    assert "Read/Write File" in result  # BUSINESS_LABELS["file_io"]
+    assert "File I/O" not in result  # _TYPE_LABELS["file_io"]
+    assert "save_data" in result
+    assert "save_data()" not in result  # no parens in business mode
+
+
+def test_compact_node_technical_labels():
+    """Default technical mode uses _TYPE_LABELS and keeps ()."""
+    steps = [
+        Step(line_number=i, type="file_io", description=f"op{i}")
+        for i in range(3)
+    ]
+    result = _compact_function_node("save_data", steps, "test")
+    assert "File I/O" in result
+    assert "save_data()" in result
+
+
+def test_project_graph_business_connections():
+    """business=True translates connection edge labels."""
+    scripts = [AnalyzedScript(path="a.py"), AnalyzedScript(path="b.py")]
+    connections = [
+        ScriptConnection(source="a.py", target="b.py", type="import", detail=""),
+    ]
+    project = AnalyzedProject(path="/tmp", scripts=scripts, connections=connections)
+    result_biz = project_graph(project, business=True)
+    result_tech = project_graph(project, business=False)
+    assert '"uses"' in result_biz
+    assert '"import"' in result_tech
