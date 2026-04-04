@@ -385,6 +385,23 @@ def infer_phase(step: Step) -> str:
     return "processing"
 
 
+def deduplicate_steps(steps: list[Step]) -> list[tuple[str, list[Step]]]:
+    """Group steps with identical ``translate_step()`` descriptions.
+
+    Returns ``(description, [steps])`` tuples in first-occurrence order.
+    Groups of 1 render normally; groups of 2+ collapse into a summary with
+    an expandable list.
+    """
+    groups: dict[str, list[Step]] = {}
+    for step in steps:
+        try:
+            key = translate_step(step)
+        except Exception:
+            key = step.description or "Unknown step"
+        groups.setdefault(key, []).append(step)
+    return list(groups.items())
+
+
 def group_steps_by_phase(steps: list[Step]) -> list[tuple[str, str, list[Step]]]:
     """Group steps by inferred phase, ordered by PHASE_ORDER.
 

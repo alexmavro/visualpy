@@ -11,6 +11,7 @@ from visualpy.translate import (
     PHASE_ORDER,
     TECHNICAL_LABELS,
     TECHNICAL_LABELS_SHORT,
+    deduplicate_steps,
     group_steps_by_phase,
     infer_phase,
     translate_connection,
@@ -511,3 +512,103 @@ class TestGroupStepsByPhase:
         """All PHASE_ORDER keys must exist in PHASE_LABELS."""
         for key in PHASE_ORDER:
             assert key in PHASE_LABELS, f"Missing label for phase {key}"
+
+
+# --- deduplicate_steps (Sprint 7) -------------------------------------------
+
+
+class TestDeduplicateSteps:
+    def test_all_unique(self):
+        steps = [
+            _step("api_call", "requests.get()", Service(name="API", library="requests")),
+            _step("file_io", "json.dump()"),
+            _step("output", "print()"),
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 3
+        assert all(len(group) == 1 for _, group in result)
+
+    def test_all_identical(self):
+        steps = [
+            Step(line_number=i, type="decision", description="try/except block")
+            for i in range(1, 4)
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 1
+        assert result[0][0] == "Handles potential errors"
+        assert len(result[0][1]) == 3
+
+    def test_mixed(self):
+        steps = [
+            Step(line_number=1, type="decision", description="try/except block"),
+            _step("output", "print()"),
+            Step(line_number=3, type="decision", description="try/except block"),
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 2
+        assert result[0][0] == "Handles potential errors"
+        assert len(result[0][1]) == 2
+        assert result[1][0] == "Displays message"
+        assert len(result[1][1]) == 1
+
+    def test_empty_list(self):
+        assert deduplicate_steps([]) == []
+
+    def test_single_step(self):
+        result = deduplicate_steps([_step("output", "print()")])
+        assert len(result) == 1
+        assert len(result[0][1]) == 1
+
+    def test_preserves_first_occurrence_order(self):
+        steps = [
+            _step("output", "print()"),
+            _step("api_call", "requests.get()"),
+            Step(line_number=3, type="output", description="print()"),
+        ]
+        result = deduplicate_steps(steps)
+        assert result[0][0] == "Displays message"
+        assert result[1][0] == "Fetches data from external service"
+
+    def test_count_correct(self):
+        steps = [
+            Step(line_number=i, type="decision", description="try/except block")
+            for i in range(9)
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 1
+        assert len(result[0][1]) == 9
+
+    def test_different_types_same_description_grouped(self):
+        """Steps whose translate_step() output is identical get grouped."""
+        steps = [
+            _step("transform", "list comprehension: ..."),
+            Step(line_number=2, type="transform", description="list comprehension: ..."),
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 1
+        assert len(result[0][1]) == 2
+
+    def test_nine_try_except_scenario(self):
+        """The motivating use case: 9x 'Handles potential errors'."""
+        steps = [
+            Step(line_number=i * 10, type="decision", description=f"try/except {i}")
+            for i in range(1, 10)
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 1
+        desc, group = result[0]
+        assert desc == "Handles potential errors"
+        assert len(group) == 9
+
+    def test_try_except_with_unique_interspersed(self):
+        steps = [
+            Step(line_number=1, type="decision", description="try/except a"),
+            _step("api_call", "requests.get()"),
+            Step(line_number=3, type="decision", description="try/except b"),
+            _step("file_io", "json.dump()"),
+            Step(line_number=5, type="decision", description="try/except c"),
+        ]
+        result = deduplicate_steps(steps)
+        assert len(result) == 3
+        assert result[0][0] == "Handles potential errors"
+        assert len(result[0][1]) == 3

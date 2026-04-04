@@ -15,8 +15,11 @@ from visualpy.models import (
     Trigger,
 )
 from visualpy.summarizer.llm import (
+    _build_phase_prompt,
     _build_project_prompt,
     _build_script_prompt,
+    _parse_phase_response,
+    summarize_phases,
     summarize_project,
     summarize_script,
 )
@@ -284,6 +287,183 @@ class TestCallLlm:
             messages=[{"role": "user", "content": "test"}],
             max_tokens=2048,
         )
+
+
+# --- Phase prompt building (Sprint 7) ---
+
+
+class TestBuildPhasePrompt:
+    def test_returns_two_messages(self, sample_script):
+        steps = sample_script.steps[:2]
+        messages = _build_phase_prompt(sample_script, "Setup & Data Gathering", steps)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_includes_phase_name(self, sample_script):
+        steps = sample_script.steps[:2]
+        messages = _build_phase_prompt(sample_script, "Setup & Data Gathering", steps)
+        assert "Setup & Data Gathering" in messages[1]["content"]
+
+    def test_includes_step_line_numbers(self, sample_script):
+        steps = sample_script.steps[:2]
+        messages = _build_phase_prompt(sample_script, "Setup & Data Gathering", steps)
+        content = messages[1]["content"]
+        assert "Line 10" in content
+        assert "Line 15" in content
+
+    def test_includes_services(self, sample_script):
+        steps = sample_script.steps[:1]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        assert "HTTP Client" in messages[1]["content"]
+
+    def test_includes_step_descriptions(self, sample_script):
+        steps = sample_script.steps[:1]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        assert "requests.get(url)" in messages[1]["content"]
+
+    def test_requests_json_output(self, sample_script):
+        steps = sample_script.steps[:1]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        content = messages[1]["content"]
+        assert "phase_summary" in content
+        assert "steps" in content
+
+    def test_anti_generic_instructions(self, sample_script):
+        steps = sample_script.steps[:1]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        content = messages[1]["content"]
+        assert "Handles potential errors" in content  # anti-instruction
+        assert "SPECIFIC service" in content
+
+    def test_empty_steps_list(self, sample_script):
+        messages = _build_phase_prompt(sample_script, "Setup", [])
+        assert len(messages) == 2
+        assert "No steps." in messages[1]["content"]
+
+
+class TestParsePhaseResponse:
+    def _steps(self, lines):
+        return [Step(line_number=ln, type="api_call", description="x") for ln in lines]
+
+    def test_valid_json(self):
+        raw = '{"phase_summary": "Sets everything up.", "steps": {"10": "Connects to API", "20": "Loads config"}}'
+        steps = self._steps([10, 20])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary == "Sets everything up."
+        assert descs == {10: "Connects to API", 20: "Loads config"}
+
+    def test_strips_markdown_fences(self):
+        raw = '```json\n{"phase_summary": "OK", "steps": {"5": "desc"}}\n```'
+        steps = self._steps([5])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary == "OK"
+        assert descs == {5: "desc"}
+
+    def test_strips_thinking_prefix(self):
+        raw = 'Let me think about this...\n\n{"phase_summary": "Works", "steps": {"7": "action"}}'
+        steps = self._steps([7])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary == "Works"
+        assert descs == {7: "action"}
+
+    def test_strips_trailing_text(self):
+        raw = '{"phase_summary": "OK", "steps": {"5": "desc"}} Hope this helps!'
+        steps = self._steps([5])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary == "OK"
+        assert descs == {5: "desc"}
+
+    def test_strips_both_prefix_and_trailing(self):
+        raw = 'Here is the result:\n{"phase_summary": "OK", "steps": {}}\nLet me know if you need more.'
+        summary, descs = _parse_phase_response(raw, [])
+        assert summary == "OK"
+
+    def test_invalid_json_returns_none(self):
+        raw = "this is not json at all"
+        summary, descs = _parse_phase_response(raw, [])
+        assert summary is None
+        assert descs == {}
+
+    def test_missing_phase_summary(self):
+        raw = '{"steps": {"10": "desc"}}'
+        steps = self._steps([10])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary is None
+        assert descs == {10: "desc"}
+
+    def test_missing_steps_key(self):
+        raw = '{"phase_summary": "Good summary"}'
+        steps = self._steps([10])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert summary == "Good summary"
+        assert descs == {}
+
+    def test_unknown_line_numbers_filtered(self):
+        raw = '{"phase_summary": "OK", "steps": {"10": "valid", "999": "invalid"}}'
+        steps = self._steps([10])
+        summary, descs = _parse_phase_response(raw, steps)
+        assert descs == {10: "valid"}
+
+    def test_empty_summary_treated_as_none(self):
+        raw = '{"phase_summary": "  ", "steps": {}}'
+        summary, descs = _parse_phase_response(raw, [])
+        assert summary is None
+
+    def test_no_brace_returns_none(self):
+        raw = "no json here whatsoever"
+        summary, descs = _parse_phase_response(raw, [])
+        assert summary is None
+        assert descs == {}
+
+
+class TestSummarizePhases:
+    def _make_script(self):
+        return AnalyzedScript(
+            path="test.py",
+            steps=[
+                Step(line_number=1, type="api_call", description="requests.get()"),
+                Step(line_number=2, type="transform", description=".strip()"),
+                Step(line_number=3, type="decision", description="try/except err"),
+            ],
+        )
+
+    @patch("visualpy.summarizer.llm._call_llm")
+    def test_returns_tuple_on_success(self, mock_llm):
+        mock_llm.return_value = '{"phase_summary": "Does stuff", "steps": {"1": "Gets data"}}'
+        script = self._make_script()
+        result = summarize_phases(script)
+        assert result is not None
+        summaries, steps = result
+        assert isinstance(summaries, dict)
+        assert isinstance(steps, dict)
+
+    @patch("visualpy.summarizer.llm._call_llm", return_value=None)
+    def test_returns_none_when_all_fail(self, mock_llm):
+        script = self._make_script()
+        result = summarize_phases(script)
+        assert result is None
+
+    @patch("visualpy.summarizer.llm._call_llm")
+    def test_partial_success(self, mock_llm):
+        """One phase succeeds, others fail → partial results."""
+        def side_effect(messages, model):
+            content = messages[1]["content"]
+            if "Setup" in content:
+                return '{"phase_summary": "Sets up", "steps": {"1": "Gets data"}}'
+            return None
+        mock_llm.side_effect = side_effect
+        script = self._make_script()
+        result = summarize_phases(script)
+        assert result is not None
+        summaries, steps = result
+        assert "setup" in summaries
+        assert 1 in steps
+
+    def test_empty_script_returns_none(self):
+        script = AnalyzedScript(path="empty.py")
+        result = summarize_phases(script)
+        assert result is None
 
 
 # --- Integration with real LLM (marked slow) ---

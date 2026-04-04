@@ -623,3 +623,104 @@ async def test_script_view_business_layout_has_details():
         resp = await ac.get("/script/test.py")
     # The technical diagram should be in a <details> element in business view
     assert "<details" in resp.text
+
+
+# --- Phase summaries + contextual descriptions (Sprint 7) ---
+
+
+@pytest.mark.anyio
+async def test_script_view_shows_phase_summary():
+    """Phase summary text should appear when phase_summaries is populated."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(
+        path="smart.py",
+        steps=steps,
+        phase_summaries={"setup": "Connects to the API and loads initial data."},
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/smart.py")
+    assert "Connects to the API and loads initial data." in resp.text
+
+
+@pytest.mark.anyio
+async def test_script_view_no_phase_summary_no_crash():
+    """When phase_summaries is None, the page should render without errors."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(path="plain.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/plain.py")
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_script_view_shows_contextual_description():
+    """Contextual step descriptions should replace deterministic ones."""
+    steps = [Step(line_number=10, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(
+        path="ctx.py",
+        steps=steps,
+        contextual_steps={10: "Fetches the latest price list from Shopify"},
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/ctx.py")
+    assert "Fetches the latest price list from Shopify" in resp.text
+
+
+@pytest.mark.anyio
+async def test_step_detail_shows_contextual_description():
+    """Step detail partial should show contextual description when available."""
+    steps = [Step(line_number=5, type="file_io", description="json.dump()")]
+    script = AnalyzedScript(
+        path="detail.py",
+        steps=steps,
+        contextual_steps={5: "Saves the cleaned customer records to a JSON backup"},
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/partials/step/detail.py/5")
+    assert "Saves the cleaned customer records to a JSON backup" in resp.text
+
+
+@pytest.mark.anyio
+async def test_step_detail_falls_back_to_translate():
+    """Without contextual_steps, step detail should fall back to translate_step."""
+    steps = [Step(line_number=5, type="output", description="print(result)")]
+    script = AnalyzedScript(path="fallback.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/partials/step/fallback.py/5")
+    assert "Displays message" in resp.text
+
+
+@pytest.mark.anyio
+async def test_deduplicate_global_registered():
+    """deduplicate_steps should be registered as a Jinja2 global."""
+    project = AnalyzedProject(path="/tmp", scripts=[AnalyzedScript(path="a.py")])
+    app = create_app(project)
+    # Accessing the Jinja env through the app routes
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_dedup_renders_locations_count():
+    """Duplicate steps should show 'N locations' in the response."""
+    steps = [
+        Step(line_number=i, type="decision", description=f"try/except e{i}")
+        for i in range(1, 4)
+    ]
+    script = AnalyzedScript(path="dupes.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/dupes.py")
+    assert "3 locations" in resp.text

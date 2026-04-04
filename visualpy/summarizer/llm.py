@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json as _json
 import os
+import re
 import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from visualpy.models import AnalyzedProject, AnalyzedScript
+    from visualpy.models import AnalyzedProject, AnalyzedScript, Step
 
 DEFAULT_MODEL = "gemini/gemini-2.5-flash"
 
@@ -119,6 +121,163 @@ def _build_project_prompt(project: AnalyzedProject) -> list[dict]:
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ]
+
+
+def summarize_phases(
+    script: AnalyzedScript, model: str | None = None,
+) -> tuple[dict[str, str], dict[int, str]] | None:
+    """Generate per-phase summaries and contextual step descriptions.
+
+    Returns ``(phase_summaries, contextual_steps)`` or ``None`` if every phase
+    failed.  Partial success returns partial results.
+    """
+    from visualpy.translate import group_steps_by_phase
+
+    model = model or os.environ.get("VISUALPY_MODEL", DEFAULT_MODEL)
+    phases = group_steps_by_phase(script.steps)
+    if not phases:
+        return None
+
+    phase_summaries: dict[str, str] = {}
+    contextual_steps: dict[int, str] = {}
+
+    for phase_key, phase_label, steps in phases:
+        summary, step_descs = _summarize_single_phase(
+            script, phase_key, phase_label, steps, model
+        )
+        if summary:
+            phase_summaries[phase_key] = summary
+        contextual_steps.update(step_descs)
+
+    if not phase_summaries and not contextual_steps:
+        return None
+    return phase_summaries, contextual_steps
+
+
+def _summarize_single_phase(
+    script: AnalyzedScript,
+    phase_key: str,
+    phase_label: str,
+    steps: list[Step],
+    model: str,
+) -> tuple[str | None, dict[int, str]]:
+    """Summarize a single phase. Returns ``(summary, {line: desc})``."""
+    messages = _build_phase_prompt(script, phase_label, steps)
+    raw = _call_llm(messages, model)
+    if raw is None:
+        return None, {}
+    return _parse_phase_response(raw, steps)
+
+
+def _build_phase_prompt(
+    script: AnalyzedScript,
+    phase_label: str,
+    steps: list[Step],
+) -> list[dict]:
+    """Build prompt messages for a single phase."""
+    services = ", ".join(s.name for s in script.services) or "None"
+
+    step_lines = []
+    for step in steps:
+        svc = step.service.name if step.service else "none"
+        inputs = ", ".join(step.inputs) if step.inputs else "none"
+        outputs = ", ".join(step.outputs) if step.outputs else "none"
+        step_lines.append(
+            f"- Line {step.line_number} [{step.type}]: {step.description}\n"
+            f"  Service: {svc} | Inputs: {inputs} | Outputs: {outputs}"
+        )
+    steps_text = "\n".join(step_lines) or "No steps."
+
+    user_msg = (
+        f"Objective: Explain the \"{phase_label}\" phase of this automation script.\n\n"
+        f"Script: {script.path}\n"
+        f"Services used: {services}\n"
+        f"This phase contains {len(steps)} steps:\n\n"
+        f"{steps_text}\n\n"
+        f"Instructions:\n"
+        f"- Write a 1-2 sentence summary of what this phase accomplishes as a whole\n"
+        f"- For EACH step (by line number), write a unique 1-sentence description\n"
+        f"- Do NOT use generic phrases like \"Handles potential errors\" or "
+        f"\"Fetches data from external service\"\n"
+        f"- For error handling: name WHAT error is being caught and HOW it is handled\n"
+        f"- For API calls: name the SPECIFIC service and what data is being exchanged\n"
+        f"- For file operations: name the SPECIFIC file type and purpose\n"
+        f"- Mention specific service names (Google Sheets, Slack, etc.) not \"external service\"\n"
+        f"- Write for someone who has never seen code before\n\n"
+        f"Expected Output (JSON):\n"
+        f'{{\n'
+        f'  "phase_summary": "1-2 sentence phase summary",\n'
+        f'  "steps": {{\n'
+        f'    "<line_number>": "Unique description for this step"\n'
+        f'  }}\n'
+        f'}}'
+    )
+
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+
+# Pattern to strip markdown code fences from LLM responses.
+_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+
+def _parse_phase_response(
+    raw: str, steps: list[Step],
+) -> tuple[str | None, dict[int, str]]:
+    """Parse LLM JSON response into (phase_summary, {line: description}).
+
+    Handles markdown fences, Gemini thinking-token prefixes, and partial
+    results gracefully.
+    """
+    valid_lines = {s.line_number for s in steps}
+
+    # Strip markdown fences.
+    fence_match = _FENCE_RE.search(raw)
+    text = fence_match.group(1) if fence_match else raw
+
+    # Strip text before first '{' and after last '}' (thinking tokens, trailing chat).
+    brace = text.find("{")
+    if brace == -1:
+        print(f"[visualpy] Warning: phase response has no JSON object: {raw[:120]}...", file=sys.stderr)
+        return None, {}
+    rbrace = text.rfind("}")
+    if rbrace == -1:
+        print(f"[visualpy] Warning: phase response has no closing brace: {raw[:120]}...", file=sys.stderr)
+        return None, {}
+    text = text[brace:rbrace + 1]
+
+    try:
+        data = _json.loads(text)
+    except _json.JSONDecodeError:
+        print(f"[visualpy] Warning: phase response is not valid JSON: {text[:120]}...", file=sys.stderr)
+        return None, {}
+
+    if not isinstance(data, dict):
+        print(f"[visualpy] Warning: phase response is not a JSON object: {type(data).__name__}", file=sys.stderr)
+        return None, {}
+
+    # Extract phase summary.
+    summary = data.get("phase_summary")
+    if isinstance(summary, str) and summary.strip():
+        summary = summary.strip()
+    else:
+        summary = None
+
+    # Extract step descriptions.
+    step_descs: dict[int, str] = {}
+    raw_steps = data.get("steps", {})
+    if isinstance(raw_steps, dict):
+        for key, desc in raw_steps.items():
+            try:
+                line = int(key)
+            except (ValueError, TypeError):
+                continue
+            if line in valid_lines and isinstance(desc, str) and desc.strip():
+                step_descs[line] = desc.strip()
+
+    return summary, step_descs
 
 
 def _call_llm(messages: list[dict], model: str) -> str | None:

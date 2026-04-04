@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Per-phase LLM summaries — contextual 1-2 sentence descriptions for each business phase (Setup, Processing, Storage, etc.)
+- Contextual step descriptions — LLM-generated unique descriptions replacing generic "Handles potential errors" x9
+- Step deduplication — identical business descriptions collapsed into expandable "Description (N locations)" groups
+- `summarize_phases()` in summarizer — one LLM call per phase, JSON structured output, robust parser
+- Phase summaries shown in accordion headers with blue left-border styling
+- Step detail panel shows contextual description when available (falls back to deterministic translation)
+- `--from-json` roundtrip preserves new phase_summaries and contextual_steps fields
 - Business/Technical view toggle — switch between plain-English and developer views (persisted in localStorage)
 - `translate.py` module — deterministic business-language translations for step descriptions, triggers, secrets, connection types
 - Business-mode Mermaid diagrams — 4 pre-rendered flow variants (detailed/compact × tech/business)

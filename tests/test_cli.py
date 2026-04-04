@@ -190,3 +190,91 @@ def test_serve_requires_path_or_from_json():
     )
     assert result.returncode != 0
     assert "Error" in result.stderr or "required" in result.stderr.lower()
+
+
+# --- Sprint 7: phase_summaries + contextual_steps ---
+
+
+def test_project_from_dict_with_phase_summaries():
+    """phase_summaries should roundtrip through asdict → _project_from_dict."""
+    project = AnalyzedProject(
+        path="/tmp/test",
+        scripts=[
+            AnalyzedScript(
+                path="x.py",
+                steps=[Step(line_number=1, type="api_call", description="get()")],
+                phase_summaries={"setup": "Loads the config."},
+            ),
+        ],
+    )
+    data = dataclasses.asdict(project)
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].phase_summaries == {"setup": "Loads the config."}
+
+
+def test_project_from_dict_with_contextual_steps():
+    """contextual_steps int keys should survive JSON roundtrip."""
+    project = AnalyzedProject(
+        path="/tmp/test",
+        scripts=[
+            AnalyzedScript(
+                path="x.py",
+                steps=[Step(line_number=10, type="api_call", description="get()")],
+                contextual_steps={10: "Fetches the price list from Shopify"},
+            ),
+        ],
+    )
+    data = dataclasses.asdict(project)
+    # Simulate JSON roundtrip (int keys become strings).
+    data = json.loads(json.dumps(data))
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].contextual_steps == {10: "Fetches the price list from Shopify"}
+    assert isinstance(list(restored.scripts[0].contextual_steps.keys())[0], int)
+
+
+def test_project_from_dict_backward_compat():
+    """Old JSON without phase_summaries/contextual_steps should load fine."""
+    data = {
+        "path": "/tmp/old",
+        "scripts": [
+            {
+                "path": "old.py",
+                "is_entry_point": False,
+                "steps": [],
+                "imports_internal": [],
+                "imports_external": [],
+                "services": [],
+                "secrets": [],
+                "triggers": [],
+                "signature": None,
+                "summary": None,
+            }
+        ],
+        "connections": [],
+        "services": [],
+        "secrets": [],
+        "entry_points": [],
+        "summary": None,
+    }
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].phase_summaries is None
+    assert restored.scripts[0].contextual_steps is None
+
+
+def test_project_from_dict_contextual_steps_none():
+    """Explicit null contextual_steps in JSON → None in model."""
+    data = {
+        "path": "/tmp",
+        "scripts": [
+            {
+                "path": "n.py",
+                "steps": [],
+                "contextual_steps": None,
+                "phase_summaries": None,
+            }
+        ],
+        "connections": [],
+    }
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].contextual_steps is None
+    assert restored.scripts[0].phase_summaries is None

@@ -19,7 +19,7 @@
         <span x-show="!biz" class="text-gray-400 text-xs">line {{ step.line_number }}</span>
     </div>
 
-    <p class="font-medium" x-show="biz">{{ translate_step(step) }}</p>
+    <p class="font-medium" x-show="biz">{{ contextual_desc or translate_step(step) }}</p>
     <p class="font-medium" x-show="!biz">{{ step.description }}</p>
 
     {% if step.function_name %}

@@ -43,10 +43,11 @@ def create_app(project: AnalyzedProject) -> FastAPI:
     templates.env.globals["translate_connection"] = translate_connection
 
     # Phase inference globals (Sprint 6.5).
-    from visualpy.translate import PHASE_LABELS, group_steps_by_phase, infer_phase
+    from visualpy.translate import PHASE_LABELS, deduplicate_steps, group_steps_by_phase, infer_phase
     templates.env.globals["infer_phase"] = infer_phase
     templates.env.globals["group_steps_by_phase"] = group_steps_by_phase
     templates.env.globals["phase_labels"] = PHASE_LABELS
+    templates.env.globals["deduplicate_steps"] = deduplicate_steps
 
     # Fallback diagrams for error cases.
     _GRAPH_FALLBACK = 'graph LR\n  error["Graph generation failed"]'
@@ -170,6 +171,8 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 "flow_compact_biz": flow_compact_biz,
                 "flow_pedagogical": flow_pedagogical,
                 "phase_groups": phase_groups,
+                "phase_summaries": script.phase_summaries or {},
+                "contextual_steps": script.contextual_steps or {},
                 "total_steps": total_steps,
                 "default_compact": total_steps > 30,
             },
@@ -189,10 +192,13 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 '<p class="text-sm text-red-600 dark:text-red-400">Step not found at this line.</p>',
                 status_code=404,
             )
+        contextual_desc = None
+        if script.contextual_steps:
+            contextual_desc = script.contextual_steps.get(step.line_number)
         return templates.TemplateResponse(
             request,
             "partials/step_detail.html",
-            context={"step": step, "script_path": path},
+            context={"step": step, "script_path": path, "contextual_desc": contextual_desc},
         )
 
     return app

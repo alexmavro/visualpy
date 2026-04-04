@@ -107,7 +107,7 @@ def _build_project(target: Path) -> AnalyzedProject:
 
 def _summarize_project(project: AnalyzedProject) -> None:
     """Populate LLM summaries on the project (mutates in place)."""
-    from visualpy.summarizer import summarize_project, summarize_script
+    from visualpy.summarizer import summarize_phases, summarize_project, summarize_script
 
     print("[visualpy] Generating summaries...", file=sys.stderr)
 
@@ -117,11 +117,15 @@ def _summarize_project(project: AnalyzedProject) -> None:
             file=sys.stderr,
         )
         script.summary = summarize_script(script)
+        result = summarize_phases(script)
+        if result:
+            script.phase_summaries, script.contextual_steps = result
 
     project.summary = summarize_project(project)
 
     count = sum(1 for s in project.scripts if s.summary) + (1 if project.summary else 0)
-    print(f"[visualpy] Generated {count} summaries", file=sys.stderr)
+    phases = sum(1 for s in project.scripts if s.phase_summaries)
+    print(f"[visualpy] Generated {count} summaries, {phases} phase descriptions", file=sys.stderr)
 
 
 def _run_analyze(args: argparse.Namespace) -> None:
@@ -178,6 +182,9 @@ def _project_from_dict(data: dict) -> AnalyzedProject:
                 triggers=[Trigger(**t) for t in s.get("triggers", [])],
                 signature=s.get("signature"),
                 summary=s.get("summary"),
+                phase_summaries=s.get("phase_summaries"),
+                contextual_steps={int(k): v for k, v in s["contextual_steps"].items()}
+                    if s.get("contextual_steps") else None,
             )
         )
     return AnalyzedProject(
@@ -214,7 +221,7 @@ def _run_serve(args: argparse.Namespace) -> None:
             sys.exit(1)
         try:
             project = _project_from_dict(data)
-        except (KeyError, TypeError, AttributeError) as exc:
+        except (KeyError, TypeError, AttributeError, ValueError) as exc:
             print(
                 f"[visualpy] Error: invalid JSON structure: {exc}\n"
                 f"[visualpy] Hint: use 'visualpy analyze ... -o file.json' to generate a valid file",

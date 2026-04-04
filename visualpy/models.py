@@ -59,6 +59,8 @@ class AnalyzedScript:
     triggers: list[Trigger] = field(default_factory=list)
     signature: dict | None = None  # main() type hints
     summary: str | None = None  # LLM-generated plain English
+    phase_summaries: dict[str, str] | None = None  # phase_key -> LLM summary
+    contextual_steps: dict[int, str] | None = None  # line_number -> LLM description
 
 
 @dataclass
