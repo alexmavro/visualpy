@@ -61,6 +61,8 @@ class AnalyzedScript:
     summary: str | None = None  # LLM-generated plain English
     phase_summaries: dict[str, str] | None = None  # phase_key -> LLM summary
     contextual_steps: dict[int, str] | None = None  # line_number -> LLM description
+    phase_risks: dict[str, str] | None = None  # phase_key -> risk annotation
+    data_flow: str | None = None  # LLM-generated "data journey" narrative
 
 
 @dataclass

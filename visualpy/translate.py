@@ -402,6 +402,86 @@ def deduplicate_steps(steps: list[Step]) -> list[tuple[str, list[Step]]]:
     return list(groups.items())
 
 
+def explain_pattern(desc: str, steps: list[Step]) -> str:
+    """Generate a teaching insight for a group of identical steps.
+
+    Called by the template when a dedup group has N > 1 steps.  Returns a
+    short sentence that explains *why* this pattern exists rather than just
+    repeating the description.  Never raises — returns a safe fallback on
+    any error to avoid crashing the template.
+    """
+    try:
+        return _explain_pattern_inner(desc, steps)
+    except Exception:
+        n = len(steps) if steps else 0
+        return f"Repeated pattern \u2014 this appears {n} times across the script"
+
+
+def _explain_pattern_inner(desc: str, steps: list[Step]) -> str:
+    n = len(steps)
+    dl = desc.lower()
+
+    # --- Output / logging patterns ---
+    if any(kw in dl for kw in ("displays message", "records activity",
+                                "records a warning", "records an error",
+                                "produces output")):
+        return f"Status logging \u2014 tracks workflow progress across {n} checkpoints"
+    if "sends notification" in dl:
+        return f"Notification system \u2014 alerts stakeholders at {n} different stages"
+
+    # --- Error-handling patterns ---
+    if "handles potential errors" in dl:
+        return (
+            "Defensive coding \u2014 each operation is protected so one failure "
+            "doesn\u2019t crash the script"
+        )
+
+    # --- API patterns (extract service name after "from"/"to") ---
+    if "fetches data from" in dl:
+        svc = desc.split("from ", 1)[-1] if "from " in desc else "service"
+        return f"Batch data gathering \u2014 collects data from {svc} in {n} requests"
+    if "sends data to" in dl or "updates data on" in dl:
+        for prep in ("to ", "on "):
+            if prep in desc.lower():
+                svc = desc.split(prep, 1)[-1]
+                break
+        else:
+            svc = "service"
+        return f"Batch updates \u2014 pushes data to {svc} in {n} operations"
+    if "authenticates with" in dl:
+        return f"Multi-service authentication \u2014 connects to {n} different services"
+
+    # --- Database patterns ---
+    if "saves to database" in dl:
+        return f"Incremental storage \u2014 saves results in {n} operations as they\u2019re processed"
+    if "queries database" in dl:
+        return f"Multi-query retrieval \u2014 retrieves different data sets in {n} queries"
+
+    # --- File I/O patterns ---
+    if "saves data to file" in dl:
+        return f"Progressive file output \u2014 writes data across {n} save operations"
+    if "reads data from file" in dl:
+        return f"Multi-source input \u2014 loads data from {n} different reads"
+
+    # --- Decision patterns ---
+    if "processes each" in dl or "repeats for each" in dl:
+        return f"Iteration pattern \u2014 {n} loops process data through multiple stages"
+    if "checks:" in dl:
+        return f"Validation logic \u2014 verifies {n} conditions to ensure correct behavior"
+
+    # --- Transform patterns ---
+    if any(kw in dl for kw in ("processes data", "builds a collection",
+                                "cleans up text", "sorts data",
+                                "converts data", "counts items",
+                                "splits text", "joins text")):
+        return f"Data pipeline \u2014 transforms data through {n} processing steps"
+
+    # --- Generic fallback by step type ---
+    step_type = steps[0].type if steps else "unknown"
+    label = BUSINESS_LABELS.get(step_type, step_type.replace("_", " ").capitalize())
+    return f"Repeated {label} \u2014 this pattern appears {n} times across the script"
+
+
 def group_steps_by_phase(steps: list[Step]) -> list[tuple[str, str, list[Step]]]:
     """Group steps by inferred phase, ordered by PHASE_ORDER.
 

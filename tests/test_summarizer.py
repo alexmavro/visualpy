@@ -15,10 +15,12 @@ from visualpy.models import (
     Trigger,
 )
 from visualpy.summarizer.llm import (
+    _build_data_flow_prompt,
     _build_phase_prompt,
     _build_project_prompt,
     _build_script_prompt,
     _parse_phase_response,
+    summarize_data_flow,
     summarize_phases,
     summarize_project,
     summarize_script,
@@ -349,70 +351,70 @@ class TestParsePhaseResponse:
     def test_valid_json(self):
         raw = '{"phase_summary": "Sets everything up.", "steps": {"10": "Connects to API", "20": "Loads config"}}'
         steps = self._steps([10, 20])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary == "Sets everything up."
         assert descs == {10: "Connects to API", 20: "Loads config"}
 
     def test_strips_markdown_fences(self):
         raw = '```json\n{"phase_summary": "OK", "steps": {"5": "desc"}}\n```'
         steps = self._steps([5])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary == "OK"
         assert descs == {5: "desc"}
 
     def test_strips_thinking_prefix(self):
         raw = 'Let me think about this...\n\n{"phase_summary": "Works", "steps": {"7": "action"}}'
         steps = self._steps([7])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary == "Works"
         assert descs == {7: "action"}
 
     def test_strips_trailing_text(self):
         raw = '{"phase_summary": "OK", "steps": {"5": "desc"}} Hope this helps!'
         steps = self._steps([5])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary == "OK"
         assert descs == {5: "desc"}
 
     def test_strips_both_prefix_and_trailing(self):
         raw = 'Here is the result:\n{"phase_summary": "OK", "steps": {}}\nLet me know if you need more.'
-        summary, descs = _parse_phase_response(raw, [])
+        summary, descs, risk = _parse_phase_response(raw, [])
         assert summary == "OK"
 
     def test_invalid_json_returns_none(self):
         raw = "this is not json at all"
-        summary, descs = _parse_phase_response(raw, [])
+        summary, descs, risk = _parse_phase_response(raw, [])
         assert summary is None
         assert descs == {}
 
     def test_missing_phase_summary(self):
         raw = '{"steps": {"10": "desc"}}'
         steps = self._steps([10])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary is None
         assert descs == {10: "desc"}
 
     def test_missing_steps_key(self):
         raw = '{"phase_summary": "Good summary"}'
         steps = self._steps([10])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert summary == "Good summary"
         assert descs == {}
 
     def test_unknown_line_numbers_filtered(self):
         raw = '{"phase_summary": "OK", "steps": {"10": "valid", "999": "invalid"}}'
         steps = self._steps([10])
-        summary, descs = _parse_phase_response(raw, steps)
+        summary, descs, risk = _parse_phase_response(raw, steps)
         assert descs == {10: "valid"}
 
     def test_empty_summary_treated_as_none(self):
         raw = '{"phase_summary": "  ", "steps": {}}'
-        summary, descs = _parse_phase_response(raw, [])
+        summary, descs, risk = _parse_phase_response(raw, [])
         assert summary is None
 
     def test_no_brace_returns_none(self):
         raw = "no json here whatsoever"
-        summary, descs = _parse_phase_response(raw, [])
+        summary, descs, risk = _parse_phase_response(raw, [])
         assert summary is None
         assert descs == {}
 
@@ -434,9 +436,10 @@ class TestSummarizePhases:
         script = self._make_script()
         result = summarize_phases(script)
         assert result is not None
-        summaries, steps = result
+        summaries, steps, risks = result
         assert isinstance(summaries, dict)
         assert isinstance(steps, dict)
+        assert isinstance(risks, dict)
 
     @patch("visualpy.summarizer.llm._call_llm", return_value=None)
     def test_returns_none_when_all_fail(self, mock_llm):
@@ -456,13 +459,173 @@ class TestSummarizePhases:
         script = self._make_script()
         result = summarize_phases(script)
         assert result is not None
-        summaries, steps = result
+        summaries, steps, risks = result
         assert "setup" in summaries
         assert 1 in steps
 
     def test_empty_script_returns_none(self):
         script = AnalyzedScript(path="empty.py")
         result = summarize_phases(script)
+        assert result is None
+
+    @patch("visualpy.summarizer.llm._call_llm")
+    def test_risks_collected(self, mock_llm):
+        mock_llm.return_value = (
+            '{"phase_summary": "Does stuff", "steps": {"1": "Gets data"}, '
+            '"risk": "API might be rate-limited"}'
+        )
+        script = self._make_script()
+        result = summarize_phases(script)
+        assert result is not None
+        _, _, risks = result
+        assert isinstance(risks, dict)
+        assert any("rate-limited" in v for v in risks.values())
+
+    @patch("visualpy.summarizer.llm._call_llm")
+    def test_partial_risks(self, mock_llm):
+        """Some phases return risk, others don't → partial risks collected."""
+        def side_effect(messages, model):
+            content = messages[1]["content"]
+            if "Setup" in content:
+                return '{"phase_summary": "Sets up", "steps": {"1": "x"}, "risk": "Auth may expire"}'
+            return '{"phase_summary": "Processes", "steps": {"2": "y"}}'
+        mock_llm.side_effect = side_effect
+        script = self._make_script()
+        result = summarize_phases(script)
+        assert result is not None
+        _, _, risks = result
+        assert "setup" in risks
+        assert "processing" not in risks
+
+
+class TestParsePhaseResponseRisk:
+    """Tests for risk extraction in _parse_phase_response."""
+
+    def _steps(self, lines):
+        return [Step(line_number=ln, type="api_call", description="x") for ln in lines]
+
+    def test_extracts_risk(self):
+        raw = '{"phase_summary": "OK", "steps": {}, "risk": "API timeout possible"}'
+        summary, descs, risk = _parse_phase_response(raw, [])
+        assert risk == "API timeout possible"
+
+    def test_empty_risk_is_none(self):
+        raw = '{"phase_summary": "OK", "steps": {}, "risk": ""}'
+        summary, descs, risk = _parse_phase_response(raw, [])
+        assert risk is None
+
+    def test_whitespace_risk_is_none(self):
+        raw = '{"phase_summary": "OK", "steps": {}, "risk": "   "}'
+        summary, descs, risk = _parse_phase_response(raw, [])
+        assert risk is None
+
+    def test_missing_risk_is_none(self):
+        raw = '{"phase_summary": "OK", "steps": {}}'
+        summary, descs, risk = _parse_phase_response(raw, [])
+        assert risk is None
+
+    def test_risk_stripped(self):
+        raw = '{"phase_summary": "OK", "steps": {}, "risk": "  trimmed  "}'
+        summary, descs, risk = _parse_phase_response(raw, [])
+        assert risk == "trimmed"
+
+    def test_risk_with_steps(self):
+        raw = '{"phase_summary": "OK", "steps": {"10": "desc"}, "risk": "Rate limit"}'
+        steps = self._steps([10])
+        summary, descs, risk = _parse_phase_response(raw, steps)
+        assert descs == {10: "desc"}
+        assert risk == "Rate limit"
+
+
+class TestBuildPhasePromptRisk:
+    """Tests that _build_phase_prompt requests risk in the output."""
+
+    def test_prompt_includes_risk_instruction(self, sample_script):
+        steps = [Step(line_number=10, type="api_call", description="requests.get()")]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        user_msg = messages[1]["content"]
+        assert "risk" in user_msg.lower()
+        assert "failure mode" in user_msg.lower() or "what could go wrong" in user_msg.lower()
+
+    def test_expected_json_includes_risk_field(self, sample_script):
+        steps = [Step(line_number=10, type="api_call", description="requests.get()")]
+        messages = _build_phase_prompt(sample_script, "Setup", steps)
+        user_msg = messages[1]["content"]
+        assert '"risk"' in user_msg
+
+
+# --- Sprint 7.5: Data Flow Narrative ---
+
+
+class TestBuildDataFlowPrompt:
+    """Tests for _build_data_flow_prompt."""
+
+    def test_returns_two_messages(self, sample_script):
+        messages = _build_data_flow_prompt(sample_script)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_includes_services(self):
+        script = AnalyzedScript(
+            path="test.py",
+            steps=[Step(line_number=1, type="api_call", description="requests.get()")],
+            services=[Service(name="Google Sheets", library="gspread")],
+        )
+        messages = _build_data_flow_prompt(script)
+        assert "Google Sheets" in messages[1]["content"]
+
+    def test_includes_arrow_instruction(self, sample_script):
+        messages = _build_data_flow_prompt(sample_script)
+        user_msg = messages[1]["content"]
+        assert "\u2192" in user_msg
+
+    def test_includes_phases(self, sample_script):
+        messages = _build_data_flow_prompt(sample_script)
+        user_msg = messages[1]["content"]
+        assert "Phases:" in user_msg
+
+    def test_includes_io_variables(self):
+        script = AnalyzedScript(
+            path="test.py",
+            steps=[
+                Step(
+                    line_number=1, type="api_call", description="requests.get()",
+                    inputs=["url", "headers"], outputs=["response"],
+                ),
+            ],
+        )
+        messages = _build_data_flow_prompt(script)
+        user_msg = messages[1]["content"]
+        assert "url" in user_msg
+        assert "response" in user_msg
+
+
+class TestSummarizeDataFlow:
+    """Tests for summarize_data_flow."""
+
+    def test_empty_script_returns_none(self):
+        script = AnalyzedScript(path="empty.py")
+        result = summarize_data_flow(script)
+        assert result is None
+
+    @patch("visualpy.summarizer.llm._call_llm", return_value="Reads data \u2192 transforms \u2192 uploads")
+    def test_success(self, mock_llm):
+        script = AnalyzedScript(
+            path="test.py",
+            steps=[Step(line_number=1, type="api_call", description="requests.get()")],
+        )
+        result = summarize_data_flow(script)
+        assert result is not None
+        assert "\u2192" in result
+
+    @patch("visualpy.summarizer.llm._call_llm", return_value=None)
+    def test_failure_returns_none(self, mock_llm):
+        script = AnalyzedScript(
+            path="test.py",
+            steps=[Step(line_number=1, type="api_call", description="requests.get()")],
+        )
+        result = summarize_data_flow(script)
         assert result is None
 
 

@@ -107,7 +107,7 @@ def _build_project(target: Path) -> AnalyzedProject:
 
 def _summarize_project(project: AnalyzedProject) -> None:
     """Populate LLM summaries on the project (mutates in place)."""
-    from visualpy.summarizer import summarize_phases, summarize_project, summarize_script
+    from visualpy.summarizer import summarize_data_flow, summarize_phases, summarize_project, summarize_script
 
     print("[visualpy] Generating summaries...", file=sys.stderr)
 
@@ -119,7 +119,8 @@ def _summarize_project(project: AnalyzedProject) -> None:
         script.summary = summarize_script(script)
         result = summarize_phases(script)
         if result:
-            script.phase_summaries, script.contextual_steps = result
+            script.phase_summaries, script.contextual_steps, script.phase_risks = result
+        script.data_flow = summarize_data_flow(script)
 
     project.summary = summarize_project(project)
 
@@ -185,6 +186,8 @@ def _project_from_dict(data: dict) -> AnalyzedProject:
                 phase_summaries=s.get("phase_summaries"),
                 contextual_steps={int(k): v for k, v in s["contextual_steps"].items()}
                     if s.get("contextual_steps") else None,
+                phase_risks=s.get("phase_risks"),
+                data_flow=s.get("data_flow"),
             )
         )
     return AnalyzedProject(

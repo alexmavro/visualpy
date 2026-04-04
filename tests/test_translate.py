@@ -12,6 +12,7 @@ from visualpy.translate import (
     TECHNICAL_LABELS,
     TECHNICAL_LABELS_SHORT,
     deduplicate_steps,
+    explain_pattern,
     group_steps_by_phase,
     infer_phase,
     translate_connection,
@@ -612,3 +613,121 @@ class TestDeduplicateSteps:
         assert len(result) == 3
         assert result[0][0] == "Handles potential errors"
         assert len(result[0][1]) == 3
+
+
+# --- explain_pattern ----------------------------------------------------------
+
+
+class TestExplainPattern:
+    """Tests for the pattern insight generator."""
+
+    def test_displays_message(self):
+        steps = [_step("output", "print()") for _ in range(20)]
+        result = explain_pattern("Displays message", steps)
+        assert "Status logging" in result
+        assert "20" in result
+
+    def test_records_activity(self):
+        steps = [_step("output", "logger.info()") for _ in range(5)]
+        result = explain_pattern("Records activity", steps)
+        assert "Status logging" in result
+        assert "5" in result
+
+    def test_records_error(self):
+        steps = [_step("output", "logger.error()") for _ in range(3)]
+        result = explain_pattern("Records an error", steps)
+        assert "Status logging" in result
+
+    def test_handles_potential_errors(self):
+        steps = [
+            Step(line_number=i, type="decision", description=f"try/except {i}")
+            for i in range(9)
+        ]
+        result = explain_pattern("Handles potential errors", steps)
+        assert "Defensive coding" in result
+        assert "protected" in result
+
+    def test_fetches_data_from_service(self):
+        svc = Service(name="Google Sheets", library="gspread")
+        steps = [_step("api_call", "requests.get()", service=svc) for _ in range(5)]
+        result = explain_pattern("Fetches data from Google Sheets", steps)
+        assert "Batch data gathering" in result
+        assert "Google Sheets" in result
+        assert "5" in result
+
+    def test_sends_data_to_service(self):
+        steps = [_step("api_call", "requests.post()") for _ in range(3)]
+        result = explain_pattern("Sends data to Slack", steps)
+        assert "Batch updates" in result
+        assert "Slack" in result
+
+    def test_saves_to_database(self):
+        steps = [_step("db_op", ".insert()") for _ in range(4)]
+        result = explain_pattern("Saves to database", steps)
+        assert "Incremental storage" in result
+        assert "4" in result
+
+    def test_saves_data_to_file(self):
+        steps = [_step("file_io", "json.dump()") for _ in range(3)]
+        result = explain_pattern("Saves data to file", steps)
+        assert "Progressive file output" in result
+
+    def test_reads_data_from_file(self):
+        steps = [_step("file_io", ".read()") for _ in range(2)]
+        result = explain_pattern("Reads data from file", steps)
+        assert "Multi-source input" in result
+
+    def test_processes_each(self):
+        steps = [
+            Step(line_number=i, type="decision", description=f"for item in list{i}")
+            for i in range(4)
+        ]
+        result = explain_pattern("Processes each item", steps)
+        assert "Iteration pattern" in result
+        assert "4" in result
+
+    def test_checks_condition(self):
+        steps = [
+            Step(line_number=i, type="decision", description=f"if x{i}")
+            for i in range(6)
+        ]
+        result = explain_pattern("Checks: some_condition", steps)
+        assert "Validation logic" in result
+        assert "6" in result
+
+    def test_transform_family(self):
+        steps = [_step("transform", "data.split()") for _ in range(3)]
+        result = explain_pattern("Splits text into parts", steps)
+        assert "Data pipeline" in result
+        assert "3" in result
+
+    def test_generic_fallback(self):
+        steps = [_step("api_call", "something_unusual()") for _ in range(7)]
+        result = explain_pattern("Completely unknown pattern", steps)
+        assert "Repeated" in result
+        assert "7" in result
+
+    def test_single_step(self):
+        """Even with 1 step, should return a valid string."""
+        steps = [_step("output", "print()")]
+        result = explain_pattern("Displays message", steps)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_sends_notification(self):
+        steps = [_step("output", "send()") for _ in range(4)]
+        result = explain_pattern("Sends notification", steps)
+        assert "Notification system" in result
+        assert "4" in result
+
+    def test_empty_steps_list(self):
+        """Empty steps should not crash — returns safe fallback."""
+        result = explain_pattern("Displays message", [])
+        assert isinstance(result, str)
+        assert "0" in result
+
+    def test_exception_returns_fallback(self):
+        """Any internal error should be caught, not propagated."""
+        result = explain_pattern(None, [_step("output", "print()")])
+        assert isinstance(result, str)
+        assert "Repeated" in result or "pattern" in result.lower()

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Pattern insights — deterministic teaching explanations for dedup groups (e.g., "Status logging — tracks workflow progress across 20 checkpoints")
+- Risk annotations — per-phase "what could go wrong?" warnings piggybacked on existing LLM calls (zero extra cost)
+- Data flow narrative — LLM-generated "data journey" callout (e.g., "Reads from Google Sheets → enriches via API → updates sheet")
+- `explain_pattern()` in translate.py — keyword-matched insights for all dedup patterns with exception-safe fallback
+- `summarize_data_flow()` in summarizer — 1 LLM call per script for data journey narrative
 - Per-phase LLM summaries — contextual 1-2 sentence descriptions for each business phase (Setup, Processing, Storage, etc.)
 - Contextual step descriptions — LLM-generated unique descriptions replacing generic "Handles potential errors" x9
 - Step deduplication — identical business descriptions collapsed into expandable "Description (N locations)" groups

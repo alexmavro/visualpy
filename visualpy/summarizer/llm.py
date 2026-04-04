@@ -39,6 +39,25 @@ def summarize_project(
     return _call_llm(messages, model)
 
 
+def summarize_data_flow(
+    script: AnalyzedScript, model: str | None = None,
+) -> str | None:
+    """Generate a 1-sentence data journey narrative for a script."""
+    if not script.steps:
+        return None
+    model = model or os.environ.get("VISUALPY_MODEL", DEFAULT_MODEL)
+    try:
+        messages = _build_data_flow_prompt(script)
+    except Exception as exc:
+        print(
+            f"[visualpy] Warning: failed to build data flow prompt for "
+            f"{script.path}: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return _call_llm(messages, model)
+
+
 def _build_script_prompt(script: AnalyzedScript) -> list[dict]:
     """Format a script's structured data into LLM messages."""
     triggers = ", ".join(f"{t.type}: {t.detail}" for t in script.triggers) or "None"
@@ -123,13 +142,62 @@ def _build_project_prompt(project: AnalyzedProject) -> list[dict]:
     ]
 
 
+def _build_data_flow_prompt(script: AnalyzedScript) -> list[dict]:
+    """Build prompt messages for a data flow narrative."""
+    from visualpy.translate import group_steps_by_phase
+
+    services = ", ".join(s.name for s in script.services) or "None"
+
+    # Summarize steps by phase (types + counts, not full details).
+    phase_lines = []
+    for phase_key, phase_label, steps in group_steps_by_phase(script.steps):
+        type_counts: dict[str, int] = {}
+        for step in steps:
+            type_counts[step.type] = type_counts.get(step.type, 0) + 1
+        types_text = ", ".join(f"{t} ({n})" for t, n in type_counts.items())
+        phase_lines.append(f"- {phase_label}: {types_text}")
+    phases_text = "\n".join(phase_lines) or "No phases."
+
+    # Collect unique I/O variable names for context.
+    all_inputs = sorted({inp for s in script.steps for inp in s.inputs})[:10]
+    all_outputs = sorted({out for s in script.steps for out in s.outputs})[:10]
+    io_text = ""
+    if all_inputs:
+        io_text += f"Key inputs: {', '.join(all_inputs)}\n"
+    if all_outputs:
+        io_text += f"Key outputs: {', '.join(all_outputs)}\n"
+
+    user_msg = (
+        f"Objective: Write a single sentence describing how data flows through "
+        f"this automation script.\n\n"
+        f"Script: {script.path}\n"
+        f"Services used: {services}\n"
+        f"{io_text}\n"
+        f"Phases:\n{phases_text}\n\n"
+        f"Instructions:\n"
+        f"- Use arrow notation: \"Source \u2192 verb via Service \u2192 Destination\"\n"
+        f"- Name specific services (Google Sheets, Slack, etc.) not \"external service\"\n"
+        f"- Describe the data transformation, not just the endpoints\n"
+        f"- One sentence maximum\n"
+        f"- Write for someone who has never seen code before\n\n"
+        f"Expected Output: A single sentence like "
+        f"\"Reads customer leads from Google Sheets \u2192 enriches with email "
+        f"addresses via AnyMailFinder \u2192 updates the sheet with results\""
+    )
+
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+
 def summarize_phases(
     script: AnalyzedScript, model: str | None = None,
-) -> tuple[dict[str, str], dict[int, str]] | None:
-    """Generate per-phase summaries and contextual step descriptions.
+) -> tuple[dict[str, str], dict[int, str], dict[str, str]] | None:
+    """Generate per-phase summaries, contextual step descriptions, and risks.
 
-    Returns ``(phase_summaries, contextual_steps)`` or ``None`` if every phase
-    failed.  Partial success returns partial results.
+    Returns ``(phase_summaries, contextual_steps, phase_risks)`` or ``None``
+    if every phase failed.  Partial success returns partial results.
     """
     from visualpy.translate import group_steps_by_phase
 
@@ -140,18 +208,21 @@ def summarize_phases(
 
     phase_summaries: dict[str, str] = {}
     contextual_steps: dict[int, str] = {}
+    phase_risks: dict[str, str] = {}
 
     for phase_key, phase_label, steps in phases:
-        summary, step_descs = _summarize_single_phase(
+        summary, step_descs, risk = _summarize_single_phase(
             script, phase_key, phase_label, steps, model
         )
         if summary:
             phase_summaries[phase_key] = summary
         contextual_steps.update(step_descs)
+        if risk:
+            phase_risks[phase_key] = risk
 
-    if not phase_summaries and not contextual_steps:
+    if not phase_summaries and not contextual_steps and not phase_risks:
         return None
-    return phase_summaries, contextual_steps
+    return phase_summaries, contextual_steps, phase_risks
 
 
 def _summarize_single_phase(
@@ -160,12 +231,12 @@ def _summarize_single_phase(
     phase_label: str,
     steps: list[Step],
     model: str,
-) -> tuple[str | None, dict[int, str]]:
-    """Summarize a single phase. Returns ``(summary, {line: desc})``."""
+) -> tuple[str | None, dict[int, str], str | None]:
+    """Summarize a single phase. Returns ``(summary, {line: desc}, risk)``."""
     messages = _build_phase_prompt(script, phase_label, steps)
     raw = _call_llm(messages, model)
     if raw is None:
-        return None, {}
+        return None, {}, None
     return _parse_phase_response(raw, steps)
 
 
@@ -203,13 +274,17 @@ def _build_phase_prompt(
         f"- For API calls: name the SPECIFIC service and what data is being exchanged\n"
         f"- For file operations: name the SPECIFIC file type and purpose\n"
         f"- Mention specific service names (Google Sheets, Slack, etc.) not \"external service\"\n"
-        f"- Write for someone who has never seen code before\n\n"
+        f"- Write for someone who has never seen code before\n"
+        f"- Identify the main risk or failure mode in this phase "
+        f"(rate limits, auth expiry, timeout, missing data, etc.)\n"
+        f"- If no significant risk exists, use an empty string for \"risk\"\n\n"
         f"Expected Output (JSON):\n"
         f'{{\n'
         f'  "phase_summary": "1-2 sentence phase summary",\n'
         f'  "steps": {{\n'
         f'    "<line_number>": "Unique description for this step"\n'
-        f'  }}\n'
+        f'  }},\n'
+        f'  "risk": "One sentence about what could go wrong in this phase"\n'
         f'}}'
     )
 
@@ -225,8 +300,8 @@ _FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
 def _parse_phase_response(
     raw: str, steps: list[Step],
-) -> tuple[str | None, dict[int, str]]:
-    """Parse LLM JSON response into (phase_summary, {line: description}).
+) -> tuple[str | None, dict[int, str], str | None]:
+    """Parse LLM JSON response into (phase_summary, {line: description}, risk).
 
     Handles markdown fences, Gemini thinking-token prefixes, and partial
     results gracefully.
@@ -241,22 +316,22 @@ def _parse_phase_response(
     brace = text.find("{")
     if brace == -1:
         print(f"[visualpy] Warning: phase response has no JSON object: {raw[:120]}...", file=sys.stderr)
-        return None, {}
+        return None, {}, None
     rbrace = text.rfind("}")
     if rbrace == -1:
         print(f"[visualpy] Warning: phase response has no closing brace: {raw[:120]}...", file=sys.stderr)
-        return None, {}
+        return None, {}, None
     text = text[brace:rbrace + 1]
 
     try:
         data = _json.loads(text)
     except _json.JSONDecodeError:
         print(f"[visualpy] Warning: phase response is not valid JSON: {text[:120]}...", file=sys.stderr)
-        return None, {}
+        return None, {}, None
 
     if not isinstance(data, dict):
         print(f"[visualpy] Warning: phase response is not a JSON object: {type(data).__name__}", file=sys.stderr)
-        return None, {}
+        return None, {}, None
 
     # Extract phase summary.
     summary = data.get("phase_summary")
@@ -277,7 +352,14 @@ def _parse_phase_response(
             if line in valid_lines and isinstance(desc, str) and desc.strip():
                 step_descs[line] = desc.strip()
 
-    return summary, step_descs
+    # Extract risk annotation.
+    risk = data.get("risk")
+    if isinstance(risk, str) and risk.strip():
+        risk = risk.strip()
+    else:
+        risk = None
+
+    return summary, step_descs, risk
 
 
 def _call_llm(messages: list[dict], model: str) -> str | None:

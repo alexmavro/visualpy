@@ -78,6 +78,15 @@
         </div>
         {% endif %}
 
+        {% if data_flow %}
+        <!-- Data Journey callout -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20
+                    border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">Data Journey</h3>
+            <p class="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">{{ data_flow }}</p>
+        </div>
+        {% endif %}
+
         <!-- Phase list + sidebar grid -->
         <div class="grid gap-6 lg:grid-cols-3">
             <!-- Phase-grouped step list (2/3 width) -->
@@ -111,11 +120,14 @@
                         </button>
                         {% else %}
                         <details class="rounded group/dedup">
-                            <summary class="px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2">
-                                <svg class="w-3 h-3 text-gray-400 transition group-open/dedup:rotate-90 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                                <span class="px-1.5 py-0.5 rounded text-xs font-medium {{ step_badge_classes(group_steps[0].type) }} shrink-0">{{ biz_labels.get(group_steps[0].type, group_steps[0].type) }}</span>
-                                <span class="truncate">{{ desc }}</span>
-                                <span class="ml-auto bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded shrink-0">{{ group_steps|length }} locations</span>
+                            <summary class="px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-3 h-3 text-gray-400 transition group-open/dedup:rotate-90 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                    <span class="px-1.5 py-0.5 rounded text-xs font-medium {{ step_badge_classes(group_steps[0].type) }} shrink-0">{{ biz_labels.get(group_steps[0].type, group_steps[0].type) }}</span>
+                                    <span class="truncate">{{ desc }}</span>
+                                    <span class="ml-auto bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded shrink-0">{{ group_steps|length }} locations</span>
+                                </div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 italic pl-6 mt-0.5">{{ explain_pattern(desc, group_steps) }}</p>
                             </summary>
                             <div class="pl-8 space-y-0.5 py-1">
                                 {% for step in group_steps %}
@@ -130,6 +142,17 @@
                         {% endif %}
                         {% endfor %}
                     </div>
+                    {% if phase_risks.get(phase_key) %}
+                    <div class="px-4 pb-3 pt-1">
+                        <p class="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5" role="note">
+                            <svg class="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                            </svg>
+                            <span><span class="sr-only">Risk: </span>{{ phase_risks[phase_key] }}</span>
+                        </p>
+                    </div>
+                    {% endif %}
                 </details>
                 {% endfor %}
             </div>

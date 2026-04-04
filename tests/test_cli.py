@@ -278,3 +278,85 @@ def test_project_from_dict_contextual_steps_none():
     restored = _project_from_dict(data)
     assert restored.scripts[0].contextual_steps is None
     assert restored.scripts[0].phase_summaries is None
+
+
+# --- Sprint 7.5: phase_risks ---
+
+
+def test_project_from_dict_with_phase_risks():
+    """phase_risks should roundtrip through asdict → _project_from_dict."""
+    project = AnalyzedProject(
+        path="/test",
+        scripts=[
+            AnalyzedScript(
+                path="test.py",
+                phase_risks={"setup": "Auth token may have expired."},
+            ),
+        ],
+    )
+    data = dataclasses.asdict(project)
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].phase_risks == {"setup": "Auth token may have expired."}
+
+
+def test_project_from_dict_backward_compat_no_risks():
+    """Old JSON without phase_risks should load fine (None)."""
+    data = {
+        "path": "/test",
+        "scripts": [
+            {
+                "path": "test.py",
+                "steps": [],
+                "services": [],
+                "triggers": [],
+                "secrets": [],
+                "imports_internal": [],
+                "imports_external": [],
+            },
+        ],
+        "connections": [],
+    }
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].phase_risks is None
+
+
+# --- Sprint 7.5: data_flow ---
+
+
+def test_project_from_dict_with_data_flow():
+    """data_flow should roundtrip through asdict → _project_from_dict."""
+    project = AnalyzedProject(
+        path="/test",
+        scripts=[
+            AnalyzedScript(
+                path="test.py",
+                data_flow="Reads leads from Google Sheets \u2192 enriches via API \u2192 updates sheet",
+            ),
+        ],
+    )
+    data = dataclasses.asdict(project)
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].data_flow == (
+        "Reads leads from Google Sheets \u2192 enriches via API \u2192 updates sheet"
+    )
+
+
+def test_project_from_dict_backward_compat_no_data_flow():
+    """Old JSON without data_flow should load fine (None)."""
+    data = {
+        "path": "/test",
+        "scripts": [
+            {
+                "path": "test.py",
+                "steps": [],
+                "services": [],
+                "triggers": [],
+                "secrets": [],
+                "imports_internal": [],
+                "imports_external": [],
+            },
+        ],
+        "connections": [],
+    }
+    restored = _project_from_dict(data)
+    assert restored.scripts[0].data_flow is None

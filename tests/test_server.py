@@ -724,3 +724,76 @@ async def test_dedup_renders_locations_count():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get("/script/dupes.py")
     assert "3 locations" in resp.text
+
+
+@pytest.mark.anyio
+async def test_dedup_renders_pattern_insight():
+    """Duplicate steps should show a pattern insight explaining the repetition."""
+    steps = [
+        Step(line_number=i, type="decision", description=f"try/except e{i}")
+        for i in range(1, 4)
+    ]
+    script = AnalyzedScript(path="dupes.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/dupes.py")
+    assert "Defensive coding" in resp.text
+
+
+@pytest.mark.anyio
+async def test_phase_risk_renders():
+    """Phase risk annotation should appear in the response."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(
+        path="risky.py",
+        steps=steps,
+        phase_risks={"setup": "API rate limits could cause failures."},
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/risky.py")
+    assert "rate limits" in resp.text
+
+
+@pytest.mark.anyio
+async def test_no_crash_without_phase_risks():
+    """Script without phase_risks should render without error."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(path="safe.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/safe.py")
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_data_flow_renders():
+    """Data flow narrative should appear in the response."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(
+        path="flow.py",
+        steps=steps,
+        data_flow="Reads from API \u2192 transforms data \u2192 saves to file",
+    )
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/flow.py")
+    assert "Data Journey" in resp.text
+    assert "Reads from API" in resp.text
+
+
+@pytest.mark.anyio
+async def test_no_crash_without_data_flow():
+    """Script without data_flow should render without error."""
+    steps = [Step(line_number=1, type="api_call", description="requests.get()")]
+    script = AnalyzedScript(path="noflow.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/noflow.py")
+    assert resp.status_code == 200
+    assert "Data Journey" not in resp.text
