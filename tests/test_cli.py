@@ -42,7 +42,7 @@ def test_analyze_folder(fixtures_dir):
     assert result.returncode == 0
     data = json.loads(result.stdout)
 
-    assert len(data["scripts"]) == 8
+    assert len(data["scripts"]) == 10
     assert len(data["services"]) > 0
     assert len(data["entry_points"]) > 0
 

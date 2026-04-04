@@ -20,7 +20,7 @@ class TestAgenticWorkflows:
 
     def test_all_scripts_found(self, agentic_results):
         scripts, _ = agentic_results
-        assert len(scripts) == 8
+        assert len(scripts) == 10
 
     def test_services_detected(self, agentic_results):
         scripts, _ = agentic_results

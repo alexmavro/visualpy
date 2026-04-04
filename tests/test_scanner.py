@@ -7,7 +7,7 @@ from visualpy.analyzer.scanner import scan_project
 
 def test_scan_agentic_workflows(fixtures_dir):
     scripts = scan_project(fixtures_dir / "agentic_workflows")
-    assert len(scripts) == 8
+    assert len(scripts) == 10
     paths = {s.path for s in scripts}
     assert "read_sheet.py" in paths
     assert "scrape_google_maps.py" in paths
