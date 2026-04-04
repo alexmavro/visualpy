@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from visualpy.models import Service, Step, Trigger
+from visualpy.models import AnalyzedScript, Service, Step, Trigger
 from visualpy.translate import (
     BUSINESS_LABELS,
     PHASE_LABELS,
     PHASE_ORDER,
     TECHNICAL_LABELS,
     TECHNICAL_LABELS_SHORT,
+    compute_health,
     deduplicate_steps,
+    detect_antipatterns,
     explain_pattern,
     group_steps_by_phase,
     infer_phase,
@@ -622,10 +624,10 @@ class TestExplainPattern:
     """Tests for the pattern insight generator."""
 
     def test_displays_message(self):
-        steps = [_step("output", "print()") for _ in range(20)]
+        steps = [_step("output", "print()") for _ in range(5)]
         result = explain_pattern("Displays message", steps)
         assert "Status logging" in result
-        assert "20" in result
+        assert "5" in result
 
     def test_records_activity(self):
         steps = [_step("output", "logger.info()") for _ in range(5)]
@@ -641,7 +643,7 @@ class TestExplainPattern:
     def test_handles_potential_errors(self):
         steps = [
             Step(line_number=i, type="decision", description=f"try/except {i}")
-            for i in range(9)
+            for i in range(4)
         ]
         result = explain_pattern("Handles potential errors", steps)
         assert "Defensive coding" in result
@@ -731,3 +733,196 @@ class TestExplainPattern:
         result = explain_pattern(None, [_step("output", "print()")])
         assert isinstance(result, str)
         assert "Repeated" in result or "pattern" in result.lower()
+
+
+# --- Sprint 8: context-aware explain_pattern ----------------------------------
+
+
+class TestExplainPatternContextAware:
+    """explain_pattern should critique at high counts, praise at low counts."""
+
+    def test_error_handling_low_count_praise(self):
+        steps = [_step("decision", "try/except block") for _ in range(3)]
+        result = explain_pattern("Handles potential errors", steps)
+        assert "Defensive coding" in result
+
+    def test_error_handling_high_count_critique(self):
+        steps = [_step("decision", "try/except block") for _ in range(8)]
+        result = explain_pattern("Handles potential errors", steps)
+        assert "Repetitive" in result
+        assert "8" in result
+
+    def test_print_low_count_neutral(self):
+        steps = [_step("output", "print()") for _ in range(5)]
+        result = explain_pattern("Displays message", steps)
+        assert "Status logging" in result
+
+    def test_print_high_count_critique(self):
+        steps = [_step("output", "print()") for _ in range(20)]
+        result = explain_pattern("Displays message", steps)
+        assert "Excessive" in result
+        assert "logging" in result.lower()
+
+    def test_logger_output_high_count_stays_neutral(self):
+        """Logger-based output should not be critiqued even at high counts."""
+        steps = [_step("output", "logger.info()") for _ in range(20)]
+        result = explain_pattern("Records activity", steps)
+        assert "Status logging" in result
+
+
+# --- Sprint 8: detect_antipatterns -------------------------------------------
+
+
+def _script_with_steps(steps: list[Step]) -> AnalyzedScript:
+    return AnalyzedScript(path="test.py", steps=steps)
+
+
+class TestDetectAntipatterns:
+    def test_print_spam_detected(self):
+        steps = [_step("output", f"print('msg{i}')") for i in range(10)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "print_spam" in ids
+
+    def test_print_spam_not_triggered_with_logger(self):
+        steps = [_step("output", f"print('msg{i}')") for i in range(10)]
+        steps.append(_step("output", "logger.info('start')"))
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "print_spam" not in ids
+
+    def test_print_spam_threshold(self):
+        """Exactly 3 prints → no finding; 4 → finding."""
+        three = [_step("output", "print('x')") for _ in range(3)]
+        assert "print_spam" not in [f["id"] for f in detect_antipatterns(_script_with_steps(three))]
+        four = [_step("output", "print('x')") for _ in range(4)]
+        assert "print_spam" in [f["id"] for f in detect_antipatterns(_script_with_steps(four))]
+
+    def test_phase_imbalance_detected(self):
+        # 20 output steps (→ reporting) + 2 transform steps (→ processing)
+        steps = [_step("output", "print('x')") for _ in range(20)]
+        steps += [_step("transform", "sorted()") for _ in range(2)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "phase_imbalance" in ids
+
+    def test_phase_imbalance_balanced(self):
+        # Even split across types
+        steps = [_step("output", "print('x')") for _ in range(5)]
+        steps += [_step("transform", "sorted()") for _ in range(5)]
+        steps += [_step("api_call", "requests.get()") for _ in range(5)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "phase_imbalance" not in ids
+
+    def test_error_handling_bulk(self):
+        steps = [_step("decision", "try/except block") for _ in range(8)]
+        steps += [_step("api_call", "requests.get()") for _ in range(3)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "error_handling_bulk" in ids
+
+    def test_no_error_handling(self):
+        steps = [_step("api_call", "requests.get()") for _ in range(12)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "no_error_handling" in ids
+
+    def test_no_error_handling_small_script(self):
+        """Scripts with ≤10 steps don't trigger no_error_handling."""
+        steps = [_step("api_call", "requests.get()") for _ in range(5)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "no_error_handling" not in ids
+
+    def test_no_error_handling_requires_io(self):
+        """Scripts with only transforms don't need error handling."""
+        steps = [_step("transform", "sorted()") for _ in range(15)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "no_error_handling" not in ids
+
+    def test_transform_heavy(self):
+        steps = [_step("transform", "sorted()") for _ in range(20)]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        ids = [f["id"] for f in findings]
+        assert "transform_heavy" in ids
+
+    def test_clean_script(self):
+        steps = [
+            _step("api_call", "requests.get()"),
+            _step("decision", "try/except block"),
+            _step("transform", "sorted()"),
+            _step("output", "logger.info('done')"),
+        ]
+        findings = detect_antipatterns(_script_with_steps(steps))
+        assert findings == []
+
+    def test_empty_script(self):
+        findings = detect_antipatterns(_script_with_steps([]))
+        assert findings == []
+
+    def test_exception_safe(self):
+        """Broken input should not crash — returns empty list."""
+        findings = detect_antipatterns(None)
+        assert findings == []
+
+
+class TestComputeHealth:
+    def test_clean_score(self):
+        steps = [_step("api_call", "requests.get()"), _step("decision", "try/except block")]
+        health = compute_health(_script_with_steps(steps))
+        assert health["score"] == "clean"
+        assert health["color"] == "green"
+
+    def test_warning_score(self):
+        steps = [_step("output", f"print('{i}')") for i in range(10)]
+        health = compute_health(_script_with_steps(steps))
+        # print_spam is a warning — expect yellow or amber depending on count
+        assert health["color"] in ("yellow", "amber")
+        assert len(health["findings"]) >= 1
+
+    def test_multi_warning_score(self):
+        # print_spam + error_handling_bulk → 2 warnings → amber
+        steps = [_step("output", f"print('{i}')") for i in range(10)]
+        steps += [_step("decision", "try/except block") for _ in range(8)]
+        health = compute_health(_script_with_steps(steps))
+        assert health["color"] == "amber"
+        assert health["score"] == "has issues"
+
+    def test_concern_score(self):
+        steps = [_step("api_call", "requests.get()") for _ in range(12)]
+        health = compute_health(_script_with_steps(steps))
+        assert health["color"] == "red"
+        assert health["score"] == "needs attention"
+
+    def test_exception_safe(self):
+        """Broken input cascades safely through detect_antipatterns → clean."""
+        health = compute_health(None)
+        assert health["score"] == "clean"
+        assert health["color"] == "green"
+        assert health["findings"] == []
+
+
+# --- Sprint 8: condition simplification --------------------------------------
+
+
+class TestSimplifyCondition:
+    """_simplify_condition improvements for business view."""
+
+    def test_dict_access(self):
+        result = translate_step(_step("decision", "if item['matched']"))
+        assert "matched" in result.lower()
+        assert "['" not in result
+
+    def test_get_call(self):
+        result = translate_step(_step("decision", "if item.get('needs_review')"))
+        assert "needs" in result.lower() or "review" in result.lower()
+        assert ".get(" not in result
+
+    def test_complex_condition_cleaned(self):
+        result = translate_step(
+            _step("decision", "if item['matched'] and (not item.get('needs_review'))")
+        )
+        assert "['" not in result
+        assert ".get(" not in result

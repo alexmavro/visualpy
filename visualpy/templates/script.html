@@ -87,6 +87,37 @@
         </div>
         {% endif %}
 
+        <!-- Anti-pattern findings (Sprint 8) -->
+        {% set findings = detect_antipatterns(script) %}
+        {% if findings %}
+        <div class="space-y-2">
+            {% for finding in findings %}
+            <div class="flex items-start gap-3 px-4 py-3 rounded-lg
+                {% if finding.severity == 'concern' %}bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800
+                {% elif finding.severity == 'warning' %}bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800
+                {% else %}bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800{% endif %}" role="note">
+                {% if finding.severity == 'concern' %}
+                <svg class="w-4 h-4 text-red-500 shrink-0 mt-0.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                {% elif finding.severity == 'warning' %}
+                <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                {% else %}
+                <svg class="w-4 h-4 text-blue-500 shrink-0 mt-0.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                {% endif %}
+                <div>
+                    <p class="text-sm font-medium
+                        {% if finding.severity == 'concern' %}text-red-800 dark:text-red-200
+                        {% elif finding.severity == 'warning' %}text-amber-800 dark:text-amber-200
+                        {% else %}text-blue-800 dark:text-blue-200{% endif %}">{{ finding.title }}</p>
+                    <p class="text-xs mt-0.5
+                        {% if finding.severity == 'concern' %}text-red-600 dark:text-red-400
+                        {% elif finding.severity == 'warning' %}text-amber-600 dark:text-amber-400
+                        {% else %}text-blue-600 dark:text-blue-400{% endif %}">{{ finding.detail }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <!-- Phase list + sidebar grid -->
         <div class="grid gap-6 lg:grid-cols-3">
             <!-- Phase-grouped step list (2/3 width) -->
@@ -99,6 +130,10 @@
                         <div class="flex items-center gap-3">
                             <span class="font-medium text-gray-800 dark:text-gray-200">{{ phase_label }}</span>
                             <span class="text-xs text-gray-400 dark:text-gray-500">{{ phase_steps|length }} step{{ "s" if phase_steps|length != 1 }}</span>
+                            {% set ratio = ((phase_steps|length) * 100 // (script.steps|length)) if script.steps else 0 %}
+                            {% if ratio > 40 %}
+                            <span class="text-xs font-medium text-amber-500 dark:text-amber-400">({{ ratio }}%)</span>
+                            {% endif %}
                         </div>
                         <svg class="w-4 h-4 text-gray-400 transition group-open:rotate-180" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     </summary>

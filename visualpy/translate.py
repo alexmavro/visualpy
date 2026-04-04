@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import re
+import sys
+from typing import TYPE_CHECKING
 
 from visualpy.models import Step, Trigger
+
+if TYPE_CHECKING:
+    from visualpy.models import AnalyzedScript
 
 # --- Type labels -----------------------------------------------------------
 
@@ -131,10 +136,31 @@ def _simplify_condition(cond: str) -> str:
     if " is None" in cond:
         subject = cond.split(" is None")[0].strip()
         return f"{_clean_var(subject)} is empty"
+    # Clean up code-like patterns for business readers
+    cleaned = _humanize_condition(cond)
     # Truncate long conditions
-    if len(cond) > 60:
-        return cond[:57] + "..."
-    return cond
+    if len(cleaned) > 60:
+        return cleaned[:57] + "..."
+    return cleaned
+
+
+def _humanize_condition(cond: str) -> str:
+    """Turn code-like conditions into natural language."""
+    result = cond
+    # dict access: item['matched'] → "item matched"
+    result = re.sub(r"(\w+)\[(['\"])(\w+)\2\]", r"\1 \3", result)
+    # .get() calls: item.get('needs_review') → "item needs review"
+    result = re.sub(r"(\w+)\.get\((['\"])(\w+)\2\)", r"\1 \3", result)
+    # Clean up parentheses and connectors
+    result = result.replace(" and (not ", " and not ")
+    result = re.sub(r"[()]", "", result)
+    # Replace underscores in variable-like tokens with spaces
+    result = re.sub(r"\b(\w+_\w+)\b", lambda m: m.group(1).replace("_", " "), result)
+    # If still looks like code (dots, brackets), fall back
+    if any(c in result for c in (".", "[", "]", "{", "}")):
+        return "data meets conditions"
+    cleaned = result.strip()
+    return cleaned if cleaned else "data meets conditions"
 
 
 def _clean_var(name: str) -> str:
@@ -413,7 +439,10 @@ def explain_pattern(desc: str, steps: list[Step]) -> str:
     try:
         return _explain_pattern_inner(desc, steps)
     except Exception:
-        n = len(steps) if steps else 0
+        try:
+            n = len(steps) if steps else 0
+        except Exception:
+            n = 0
         return f"Repeated pattern \u2014 this appears {n} times across the script"
 
 
@@ -422,15 +451,26 @@ def _explain_pattern_inner(desc: str, steps: list[Step]) -> str:
     dl = desc.lower()
 
     # --- Output / logging patterns ---
-    if any(kw in dl for kw in ("displays message", "records activity",
-                                "records a warning", "records an error",
-                                "produces output")):
+    if "displays message" in dl:
+        if n > 10:
+            return (
+                f"Excessive output \u2014 {n} print() calls; consider Python\u2019s "
+                "logging module for structured output"
+            )
+        return f"Status logging \u2014 tracks workflow progress across {n} checkpoints"
+    if any(kw in dl for kw in ("records activity", "records a warning",
+                                "records an error", "produces output")):
         return f"Status logging \u2014 tracks workflow progress across {n} checkpoints"
     if "sends notification" in dl:
         return f"Notification system \u2014 alerts stakeholders at {n} different stages"
 
     # --- Error-handling patterns ---
     if "handles potential errors" in dl:
+        if n > 5:
+            return (
+                "Repetitive error handling \u2014 "
+                f"{n} identical try/except blocks suggest extracting a shared helper"
+            )
         return (
             "Defensive coding \u2014 each operation is protected so one failure "
             "doesn\u2019t crash the script"
@@ -503,3 +543,150 @@ def group_steps_by_phase(steps: list[Step]) -> list[tuple[str, str, list[Step]]]
             label = phase_key.replace("_", " ").capitalize()
             result.append((phase_key, label, phase_steps))
     return result
+
+
+# --- Anti-pattern detection (Sprint 8) ------------------------------------------
+
+
+def detect_antipatterns(script: "AnalyzedScript") -> list[dict]:
+    """Detect code quality anti-patterns. Deterministic, zero LLM cost.
+
+    Returns a list of finding dicts with keys: id, severity, title, detail, count.
+    Exception-safe — never raises.
+    """
+    try:
+        return _detect_antipatterns_inner(script)
+    except Exception as exc:
+        print(
+            f"[visualpy] Warning: detect_antipatterns failed for "
+            f"{getattr(script, 'path', '?')}: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return []
+
+
+def _detect_antipatterns_inner(script: "AnalyzedScript") -> list[dict]:
+    findings: list[dict] = []
+    steps = script.steps
+    if not steps:
+        return findings
+
+    total = len(steps)
+
+    # Rule: print_spam — many print() calls with no logging framework
+    print_steps = [
+        s for s in steps
+        if s.type == "output" and "print" in s.description.lower()
+    ]
+    logger_steps = [
+        s for s in steps
+        if s.type == "output"
+        and ("logger" in s.description.lower() or "logging" in s.description.lower())
+    ]
+    if len(print_steps) > 3 and not logger_steps:
+        findings.append({
+            "id": "print_spam",
+            "severity": "warning",
+            "title": "No logging framework",
+            "detail": (
+                f"{len(print_steps)} print() calls found. Python\u2019s logging module "
+                "provides log levels, timestamps, and configurable output."
+            ),
+            "count": len(print_steps),
+        })
+
+    # Rule: phase_imbalance — one phase dominates the script
+    phases = group_steps_by_phase(steps)
+    for phase_key, phase_label, phase_steps in phases:
+        ratio = len(phase_steps) / total
+        if ratio > 0.5:
+            findings.append({
+                "id": "phase_imbalance",
+                "severity": "info",
+                "title": f"{phase_label} dominates",
+                "detail": (
+                    f"{phase_label} accounts for {int(ratio * 100)}% of all steps "
+                    f"({len(phase_steps)}/{total}). This phase may be doing too much."
+                ),
+                "phase": phase_key,
+                "count": len(phase_steps),
+            })
+
+    # Rule: error_handling_bulk — too many identical try/except blocks
+    error_steps = [
+        s for s in steps
+        if s.type == "decision" and s.description.startswith("try/except")
+    ]
+    if len(error_steps) > 5:
+        findings.append({
+            "id": "error_handling_bulk",
+            "severity": "warning",
+            "title": "Repetitive error handling",
+            "detail": (
+                f"{len(error_steps)} try/except blocks. Consider extracting "
+                "a retry/error-handling helper function."
+            ),
+            "count": len(error_steps),
+        })
+
+    # Rule: no_error_handling — script with many steps but zero try/except
+    if total > 10 and not error_steps:
+        api_or_io = [
+            s for s in steps if s.type in ("api_call", "file_io", "db_op")
+        ]
+        if api_or_io:
+            findings.append({
+                "id": "no_error_handling",
+                "severity": "concern",
+                "title": "No error handling",
+                "detail": (
+                    "This script has no try/except blocks. External service calls "
+                    "and file operations should be wrapped in error handling."
+                ),
+                "count": 0,
+            })
+
+    # Rule: transform_heavy — massive identical transform groups
+    transform_steps = [s for s in steps if s.type == "transform"]
+    if transform_steps:
+        for desc, group in deduplicate_steps(transform_steps):
+            if len(group) > 15:
+                findings.append({
+                    "id": "transform_heavy",
+                    "severity": "info",
+                    "title": "Heavy data manipulation",
+                    "detail": (
+                        f'"{desc}" appears {len(group)} times. Complex transform '
+                        "chains may benefit from a data pipeline library (pandas, etc.)."
+                    ),
+                    "count": len(group),
+                })
+
+    return findings
+
+
+def compute_health(script: "AnalyzedScript") -> dict:
+    """Compute script health summary for template use. Exception-safe."""
+    try:
+        return _compute_health_inner(script)
+    except Exception as exc:
+        print(
+            f"[visualpy] Warning: compute_health failed for "
+            f"{getattr(script, 'path', '?')}: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return {"score": "clean", "color": "green", "findings": []}
+
+
+def _compute_health_inner(script: "AnalyzedScript") -> dict:
+    findings = detect_antipatterns(script)
+    warnings = sum(1 for f in findings if f["severity"] == "warning")
+    concerns = sum(1 for f in findings if f["severity"] == "concern")
+
+    if concerns > 0:
+        return {"score": "needs attention", "color": "red", "findings": findings}
+    if warnings >= 2:
+        return {"score": "has issues", "color": "amber", "findings": findings}
+    if warnings == 1:
+        return {"score": "minor issues", "color": "yellow", "findings": findings}
+    return {"score": "clean", "color": "green", "findings": findings}

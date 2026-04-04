@@ -22,6 +22,22 @@
     {% if script.summary %}
     <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5 line-clamp-2">{{ script.summary }}</p>
     {% endif %}
+    <!-- Health indicator (business view only) -->
+    {% set health = compute_health(script) %}
+    {% if health.findings %}
+    <div x-show="biz" class="flex items-center gap-1.5 mb-1.5">
+        {% if health.color == "red" %}
+        <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+        <span class="text-xs text-red-600 dark:text-red-400">{{ health.findings|length }} issue{{ "s" if health.findings|length != 1 }}</span>
+        {% elif health.color == "amber" %}
+        <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+        <span class="text-xs text-amber-600 dark:text-amber-400">{{ health.findings|length }} issue{{ "s" if health.findings|length != 1 }}</span>
+        {% elif health.color == "yellow" %}
+        <span class="w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span>
+        <span class="text-xs text-yellow-600 dark:text-yellow-400">{{ health.findings|length }} issue{{ "s" if health.findings|length != 1 }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
     <!-- Business view: phase summary -->
     <div x-show="biz" class="flex flex-wrap gap-1.5 text-xs text-gray-500 dark:text-gray-400">
         <span>{{ script.steps|length }} steps</span>

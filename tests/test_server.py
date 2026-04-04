@@ -797,3 +797,84 @@ async def test_no_crash_without_data_flow():
         resp = await ac.get("/script/noflow.py")
     assert resp.status_code == 200
     assert "Data Journey" not in resp.text
+
+
+# --- Sprint 8: anti-pattern detection UI ---
+
+
+@pytest.mark.anyio
+async def test_antipattern_callouts_render():
+    """Script with anti-patterns should show callout cards."""
+    steps = [Step(line_number=i, type="output", description=f"print('msg{i}')") for i in range(10)]
+    script = AnalyzedScript(path="messy.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/messy.py")
+    assert resp.status_code == 200
+    assert "No logging framework" in resp.text
+
+
+@pytest.mark.anyio
+async def test_clean_script_no_callouts():
+    """Clean script should not show anti-pattern callouts."""
+    steps = [
+        Step(line_number=1, type="api_call", description="requests.get()"),
+        Step(line_number=2, type="decision", description="try/except block"),
+        Step(line_number=3, type="output", description="logger.info('done')"),
+    ]
+    script = AnalyzedScript(path="clean.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/clean.py")
+    assert resp.status_code == 200
+    assert "No logging framework" not in resp.text
+    assert "Repetitive error handling" not in resp.text
+
+
+@pytest.mark.anyio
+async def test_health_badge_on_card():
+    """Overview cards should show health badge for scripts with findings."""
+    steps = [Step(line_number=i, type="output", description=f"print('msg{i}')") for i in range(10)]
+    script = AnalyzedScript(path="messy.py", steps=steps, is_entry_point=True)
+    project = AnalyzedProject(path="/tmp", scripts=[script], entry_points=["messy.py"])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    assert resp.status_code == 200
+    assert "issue" in resp.text.lower()
+
+
+@pytest.mark.anyio
+async def test_phase_proportion_percentage():
+    """Phase with >40% of steps should show percentage."""
+    # 15 output (reporting) + 5 transform (processing) = 75% reporting
+    steps = [Step(line_number=i, type="output", description=f"print('{i}')") for i in range(15)]
+    steps += [Step(line_number=i + 20, type="transform", description="sorted()") for i in range(5)]
+    script = AnalyzedScript(path="heavy.py", steps=steps)
+    project = AnalyzedProject(path="/tmp", scripts=[script])
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/script/heavy.py")
+    assert resp.status_code == 200
+    assert "75%" in resp.text
+
+
+@pytest.mark.anyio
+async def test_credential_dedup_overview():
+    """Business view should deduplicate translated credential labels."""
+    script = AnalyzedScript(path="test.py", steps=[])
+    project = AnalyzedProject(
+        path="/tmp",
+        scripts=[script],
+        secrets=["PANDADOC_API_KEY", "PANDADOC_TOKEN", "PANDADOC_SECRET", "STRIPE_API_KEY"],
+    )
+    app = create_app(project)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/")
+    # Business view: "PandaDoc credentials" should appear only once, not 3x
+    text = resp.text
+    biz_count = text.count("PandaDoc credentials")
+    # The dedup list renders once; raw technical list has all 3 PANDADOC_* entries
+    assert biz_count == 1

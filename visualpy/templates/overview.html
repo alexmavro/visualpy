@@ -124,12 +124,26 @@
                 <span x-show="!biz">Secrets</span>
             </h2>
             {% if project.secrets %}
-            <ul class="space-y-1 text-sm">
+            <!-- Business view: deduplicated labels -->
+            <ul x-show="biz" class="space-y-1 text-sm">
+                {% set seen_biz = [] %}
+                {% for secret in project.secrets %}
+                {% set label_biz = translate_secret(secret) %}
+                {% if label_biz not in seen_biz %}
+                {% if seen_biz.append(label_biz) %}{% endif %}
+                <li class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span>
+                    {{ label_biz }}
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+            <!-- Technical view: all raw env var names -->
+            <ul x-show="!biz" class="space-y-1 text-sm">
                 {% for secret in project.secrets %}
                 <li class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span>
-                    <span x-show="biz">{{ translate_secret(secret) }}</span>
-                    <span x-show="!biz" class="font-mono">{{ secret }}</span>
+                    <span class="font-mono">{{ secret }}</span>
                 </li>
                 {% endfor %}
             </ul>

@@ -43,12 +43,22 @@ def create_app(project: AnalyzedProject) -> FastAPI:
     templates.env.globals["translate_connection"] = translate_connection
 
     # Phase inference globals (Sprint 6.5).
-    from visualpy.translate import PHASE_LABELS, deduplicate_steps, explain_pattern, group_steps_by_phase, infer_phase
+    from visualpy.translate import (
+        PHASE_LABELS,
+        compute_health,
+        deduplicate_steps,
+        detect_antipatterns,
+        explain_pattern,
+        group_steps_by_phase,
+        infer_phase,
+    )
     templates.env.globals["infer_phase"] = infer_phase
     templates.env.globals["group_steps_by_phase"] = group_steps_by_phase
     templates.env.globals["phase_labels"] = PHASE_LABELS
     templates.env.globals["deduplicate_steps"] = deduplicate_steps
     templates.env.globals["explain_pattern"] = explain_pattern
+    templates.env.globals["detect_antipatterns"] = detect_antipatterns
+    templates.env.globals["compute_health"] = compute_health
 
     # Fallback diagrams for error cases.
     _GRAPH_FALLBACK = 'graph LR\n  error["Graph generation failed"]'
