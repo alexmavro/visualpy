@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "visualpy"
 version = "0.1.0"
 description = "Auto-visualise Python automations for non-technical stakeholders"
+authors = [{name = "Alexandra Schwartz (alexmavro)"}]
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

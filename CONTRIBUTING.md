@@ -8,7 +8,7 @@ Not sure where to start? Read on. We've written this guide for people who might 
 
 That's genuinely helpful — you're making the tool better for everyone.
 
-1. Go to [Issues](https://github.com/Lexi-Energy/visualpy/issues/new/choose)
+1. Go to [Issues](https://github.com/alexmavro/visualpy/issues/new/choose)
 2. Pick **"Something isn't working"**
 3. Fill in what happened and what you expected — that's all we need
 
@@ -18,7 +18,7 @@ You'll get a response within a few days. We might ask follow-up questions to und
 
 We love hearing ideas — technical or not. If you can describe what you'd like, that's enough.
 
-1. Go to [Issues](https://github.com/Lexi-Energy/visualpy/issues/new/choose)
+1. Go to [Issues](https://github.com/alexmavro/visualpy/issues/new/choose)
 2. Pick **"I have an idea"**
 3. Describe what you'd like and why it would be useful
 
@@ -28,7 +28,7 @@ Ideas don't need to be fully formed. "It would be cool if..." is a perfectly val
 
 There are no stupid questions. If something confused you, it probably means our documentation needs work — and that's on us, not you.
 
-1. Go to [Issues](https://github.com/Lexi-Energy/visualpy/issues/new/choose)
+1. Go to [Issues](https://github.com/alexmavro/visualpy/issues/new/choose)
 2. Pick **"Question"**
 3. Ask away
 
@@ -38,7 +38,7 @@ Great! Here's how to get set up.
 
 ### 1. Fork and clone
 
-Click the **Fork** button at the top right of the [repository page](https://github.com/Lexi-Energy/visualpy). Then:
+Click the **Fork** button at the top right of the [repository page](https://github.com/alexmavro/visualpy). Then:
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/visualpy.git
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 pytest -m "not slow"
 ```
 
-You should see the full test suite pass in a few seconds. If something fails, [open an issue](https://github.com/Lexi-Energy/visualpy/issues/new/choose) — it might be a setup problem on our end.
+You should see the full test suite pass in a few seconds. If something fails, [open an issue](https://github.com/alexmavro/visualpy/issues/new/choose) — it might be a setup problem on our end.
 
 ### 4. Make your changes
 

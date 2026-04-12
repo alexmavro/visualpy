@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Anti-pattern detection — deterministic code quality analysis: print spam, phase imbalance, error handling bulk, missing error handling, heavy transforms
+- Health scoring — script cards show colored health badges (clean/minor issues/has issues/needs attention)
+- Context-aware critiques — `explain_pattern()` shifts from praise to critique at high pattern counts
+- Anti-pattern callout cards on script pages with severity-colored icons (red/amber/blue)
+- Phase proportion percentage on accordion headers when >40% of total steps
+- Credential deduplication in overview business view
+- Condition simplification — business view cleans dict access and .get() patterns from if-conditions
 - Pattern insights — deterministic teaching explanations for dedup groups (e.g., "Status logging — tracks workflow progress across 20 checkpoints")
 - Risk annotations — per-phase "what could go wrong?" warnings piggybacked on existing LLM calls (zero extra cost)
 - Data flow narrative — LLM-generated "data journey" callout (e.g., "Reads from Google Sheets → enriches via API → updates sheet")
@@ -83,5 +90,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Repo skeleton with models, fixtures, and dependency configuration
 
 <!-- Links will be added when the first release is tagged -->
-<!-- [Unreleased]: https://github.com/Lexi-Energy/visualpy/compare/v0.1.0...HEAD -->
-<!-- [0.1.0]: https://github.com/Lexi-Energy/visualpy/releases/tag/v0.1.0 -->
+<!-- [Unreleased]: https://github.com/alexmavro/visualpy/compare/v0.1.0...HEAD -->
+<!-- [0.1.0]: https://github.com/alexmavro/visualpy/releases/tag/v0.1.0 -->

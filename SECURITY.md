@@ -16,7 +16,7 @@ The web UI (`visualpy serve`) runs a local FastAPI server. By default it binds t
 
 If you find a security issue, please report it responsibly:
 
-1. **Open a private security advisory** on GitHub: [New Security Advisory](https://github.com/Lexi-Energy/visualpy/security/advisories/new)
+1. **Open a private security advisory** on GitHub: [New Security Advisory](https://github.com/alexmavro/visualpy/security/advisories/new)
 2. Or email the maintainer directly (see GitHub profile for contact info)
 
 Please do not open a public issue for security vulnerabilities.

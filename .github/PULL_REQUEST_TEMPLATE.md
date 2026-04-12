@@ -11,4 +11,4 @@
 ## Checklist
 
 - [ ] Tests pass (`pytest -m "not slow"`)
-- [ ] I've read [CONTRIBUTING.md](https://github.com/Lexi-Energy/visualpy/blob/main/CONTRIBUTING.md)
+- [ ] I've read [CONTRIBUTING.md](https://github.com/alexmavro/visualpy/blob/main/CONTRIBUTING.md)

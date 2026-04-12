@@ -1,7 +1,7 @@
 # visualpy
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://github.com/Lexi-Energy/visualpy/actions/workflows/ci.yml/badge.svg)](https://github.com/Lexi-Energy/visualpy/actions/workflows/ci.yml)
+[![Tests](https://github.com/alexmavro/visualpy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexmavro/visualpy/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 
 Auto-visualise Python automations so that even non-dev people can understand what is going on.
@@ -20,7 +20,7 @@ Drop a folder of Python scripts, get a visual breakdown of what they do, how the
 ## Quick start
 
 ```bash
-git clone https://github.com/Lexi-Energy/visualpy.git
+git clone https://github.com/alexmavro/visualpy.git
 cd visualpy
 pip install -e .
 
