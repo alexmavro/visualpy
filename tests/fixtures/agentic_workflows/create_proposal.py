@@ -24,7 +24,7 @@ except ImportError:
 
 API_KEY = os.getenv("PANDADOC_API_KEY")
 API_URL = "https://api.pandadoc.com/public/v1/documents"
-TEMPLATE_UUID = os.getenv("PANDADOC_TEMPLATE_UUID", "G8GhAvKGa9D8dmpwTnEWyV")
+TEMPLATE_UUID = os.getenv("PANDADOC_TEMPLATE_UUID", "your-template-uuid")
 TIMEOUT = int(os.getenv("PANDADOC_TIMEOUT", "30"))
 RECIPIENT_ROLE = os.getenv("PANDADOC_RECIPIENT_ROLE", "Client")
 
@@ -77,7 +77,7 @@ def validate_input(data: Dict[str, Any]) -> ProposalConfig:
 
     # Generate slide footer if not provided
     client_company = client.get("company", "Client")
-    slide_footer = generated.get("slideFooter") or f"{client_company} x LeftClick"
+    slide_footer = generated.get("slideFooter") or f"{client_company} x YourCompany"
 
     # Build token mapping - only include tokens with actual values
     token_mapping = {
@@ -204,6 +204,8 @@ def create_document(config: ProposalConfig) -> Dict[str, Any]:
                 raise RuntimeError(f"Failed to create document after {max_retries} attempts: {e}")
             logger.warning(f"Attempt {attempt + 1} failed: {e}")
             time.sleep(2 ** attempt)
+
+    raise RuntimeError(f"Failed to create document after {max_retries} attempts")
 
 
 def main() -> None:

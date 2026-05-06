@@ -29,8 +29,8 @@
             <h1 class="text-2xl font-bold">{{ script.path }}</h1>
             {% if script.is_entry_point %}
             <span class="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-full">
-                <span x-show="biz">Starting script</span>
-                <span x-show="!biz">entry point</span>
+                <span x-show="viewMode === 'business'">Starting script</span>
+                <span x-show="viewMode === 'technical'">entry point</span>
             </span>
             {% endif %}
         </div>
@@ -43,29 +43,29 @@
             {% endfor %}
             {% for trigger in script.triggers %}
             <span class="px-2 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs">
-                <span x-show="biz">{{ translate_trigger(trigger) }}</span>
-                <span x-show="!biz">{{ trigger.type }}: {{ trigger.detail }}</span>
+                <span x-show="viewMode === 'business'">{{ translate_trigger(trigger) }}</span>
+                <span x-show="viewMode === 'technical'">{{ trigger.type }}: {{ trigger.detail }}</span>
             </span>
             {% endfor %}
         </div>
         {% if script.signature %}
-        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400" x-show="biz">
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400" x-show="viewMode === 'business'">
             Requires: {% for name, info in script.signature.items() %}{{ name }}{% if not loop.last %}, {% endif %}{% endfor %}
         </p>
-        <p class="mt-2 text-sm font-mono text-gray-500 dark:text-gray-400" x-show="!biz">
+        <p class="mt-2 text-sm font-mono text-gray-500 dark:text-gray-400" x-show="viewMode === 'technical'">
             main({% for name, info in script.signature.items() %}{{ name }}{% if not loop.last %}, {% endif %}{% endfor %})
         </p>
         {% endif %}
         {% if script.summary %}
-        <p class="mt-3 text-gray-600 dark:text-gray-300 text-sm leading-relaxed border-l-2 border-blue-300 dark:border-blue-600 pl-3" x-show="!biz">{{ script.summary }}</p>
-        <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4" x-show="biz">
+        <p class="mt-3 text-gray-600 dark:text-gray-300 text-sm leading-relaxed border-l-2 border-blue-300 dark:border-blue-600 pl-3" x-show="viewMode === 'technical'">{{ script.summary }}</p>
+        <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4" x-show="viewMode === 'business'">
             <p class="text-gray-700 dark:text-gray-200 text-sm leading-relaxed">{{ script.summary }}</p>
         </div>
         {% endif %}
     </div>
 
     <!-- ==================== BUSINESS VIEW ==================== -->
-    <div x-show="biz" class="space-y-6">
+    <div x-show="viewMode === 'business'" class="space-y-6">
         <!-- Pedagogical diagram: simple phase pipeline -->
         {% if flow_pedagogical is defined %}
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
@@ -251,7 +251,7 @@
     </div>
 
     <!-- ==================== TECHNICAL VIEW ==================== -->
-    <div x-show="!biz" class="grid gap-6 lg:grid-cols-3">
+    <div x-show="viewMode === 'technical'" class="grid gap-6 lg:grid-cols-3">
         <!-- Flow diagram (takes 2/3 width on large screens) -->
         <div class="lg:col-span-2 space-y-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import os
 import sys
 from pathlib import Path
 
+from visualpy.analyzer._constants import SKIP_DIRS as _SKIP_DIRS
 from visualpy.models import AnalyzedScript, Service, Step
 from visualpy.analyzer.service_map import detect_services
 from visualpy.analyzer.signatures import parse_signature
@@ -57,7 +59,31 @@ _TRANSFORM_METHODS = frozenset({
 })
 
 
-def analyze_file(file_path: Path, project_root: Path) -> AnalyzedScript:
+def collect_local_modules(root: Path) -> set[str]:
+    """Return top-level module names for all .py files found under root.
+
+    Uses os.walk with followlinks=False to avoid symlink loops.
+    """
+    modules: set[str] = set()
+    root_str = str(root)
+    try:
+        for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+            for name in filenames:
+                if not name.endswith(".py"):
+                    continue
+                if name == "__init__.py":
+                    parent_name = Path(dirpath).name
+                    if dirpath != root_str:
+                        modules.add(parent_name)
+                else:
+                    modules.add(name[:-3])
+    except OSError as exc:
+        print(f"[visualpy] Warning: cannot collect local modules from {root}: {exc}", file=sys.stderr)
+    return modules
+
+
+def analyze_file(file_path: Path, project_root: Path, local_modules: set[str] | None = None) -> AnalyzedScript:
     """Analyze a single Python file and produce an AnalyzedScript."""
     try:
         rel_path = str(file_path.relative_to(project_root))
@@ -85,7 +111,9 @@ def analyze_file(file_path: Path, project_root: Path) -> AnalyzedScript:
         return AnalyzedScript(path=rel_path)
 
     # Extract imports
-    imports_internal, imports_external = _extract_imports(tree, project_root)
+    if local_modules is None:
+        local_modules = collect_local_modules(project_root)
+    imports_internal, imports_external = _extract_imports(tree, local_modules)
 
     # Extract secrets
     secrets = _extract_secrets(tree)
@@ -123,7 +151,7 @@ def analyze_file(file_path: Path, project_root: Path) -> AnalyzedScript:
     )
 
 
-def _extract_imports(tree: ast.Module, project_root: Path) -> tuple[list[str], list[str]]:
+def _extract_imports(tree: ast.Module, local_modules: set[str]) -> tuple[list[str], list[str]]:
     """Separate internal (project-local) from external imports."""
     internal: list[str] = []
     external: list[str] = []
@@ -131,44 +159,58 @@ def _extract_imports(tree: ast.Module, project_root: Path) -> tuple[list[str], l
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                _classify_import(alias.name, project_root, internal, external)
+                _classify_import(alias.name, local_modules, internal, external)
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                _classify_import(node.module, project_root, internal, external)
+                _classify_import(node.module, local_modules, internal, external)
+                if "." in node.module:
+                    for alias in node.names:
+                        if alias.name != "*":
+                            _classify_import(f"{node.module}.{alias.name}", local_modules, internal, external)
 
     return sorted(set(internal)), sorted(set(external))
 
 
-def _classify_import(module_name: str, project_root: Path, internal: list, external: list) -> None:
-    """Check if a module corresponds to a local .py file."""
+def _classify_import(module_name: str, local_modules: set[str], internal: list, external: list) -> None:
+    """Check if a module is defined within the project."""
     top_level = module_name.split(".")[0]
-    candidate = project_root / f"{top_level}.py"
-    candidate_pkg = project_root / top_level / "__init__.py"
-    try:
-        is_local = candidate.exists() or candidate_pkg.exists()
-    except OSError:
-        is_local = False
-    if is_local:
+    if top_level in local_modules:
         internal.append(module_name)
     else:
         external.append(module_name)
 
 
+def _imports_decouple(tree: ast.Module) -> bool:
+    """Return True if the module imports from the decouple library."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == "decouple" or alias.name.startswith("decouple.") for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and (node.module == "decouple" or node.module.startswith("decouple.")):
+                return True
+    return False
+
+
 def _extract_secrets(tree: ast.Module) -> list[str]:
-    """Find os.getenv / os.environ usage and extract secret names."""
+    """Find environment variable and configuration secret names."""
     secrets: set[str] = set()
+    has_decouple = _imports_decouple(tree)
 
     for node in ast.walk(tree):
         # os.getenv("KEY") or os.environ.get("KEY")
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             func = node.func
             if func.attr == "getenv" and isinstance(func.value, ast.Name) and func.value.id == "os":
-                if node.args and isinstance(node.args[0], ast.Constant):
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                     secrets.add(node.args[0].value)
             elif func.attr == "get" and isinstance(func.value, ast.Attribute):
                 if func.value.attr == "environ" and isinstance(func.value.value, ast.Name) and func.value.value.id == "os":
-                    if node.args and isinstance(node.args[0], ast.Constant):
+                    if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                         secrets.add(node.args[0].value)
+            elif func.attr == "config" and isinstance(func.value, ast.Name) and func.value.id == "decouple":
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    secrets.add(node.args[0].value)
 
         # os.environ["KEY"] via subscript
         elif isinstance(node, ast.Subscript):
@@ -180,6 +222,11 @@ def _extract_secrets(tree: ast.Module) -> list[str]:
             ):
                 if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
                     secrets.add(node.slice.value)
+
+        # config("KEY") via `from decouple import config`
+        if has_decouple and isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "config" and node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                secrets.add(node.args[0].value)
 
     return sorted(secrets)
 
@@ -299,6 +346,7 @@ class _StepCollector(ast.NodeVisitor):
         self.steps: list[Step] = []
         self.services = services
         self._service_libs = {s.library for s in services}
+        self._service_libs |= {s.library.rsplit(".", 1)[-1] for s in services if "." in s.library}
         self._current_func: str | None = None
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -307,7 +355,7 @@ class _StepCollector(ast.NodeVisitor):
         self.generic_visit(node)
         self._current_func = prev
 
-    visit_AsyncFunctionDef = visit_FunctionDef
+    visit_AsyncFunctionDef = visit_FunctionDef  # pyright: ignore[reportAssignmentType]
 
     def visit_If(self, node: ast.If) -> None:
         cond = _safe_unparse(node.test)
@@ -429,7 +477,7 @@ class _StepCollector(ast.NodeVisitor):
     def _match_service(self, obj_name: str) -> Service | None:
         """Find a Service object matching an object name."""
         for svc in self.services:
-            if svc.library == obj_name or obj_name.startswith(svc.library):
+            if svc.library == obj_name or svc.library.endswith(f".{obj_name}"):
                 return svc
         return None
 

@@ -130,6 +130,18 @@ def test_internal_import_detection(tmp_path):
     assert "utils" in result.imports_internal
 
 
+def test_internal_import_subdirectory(tmp_path):
+    """Module in a subdirectory should be classified as internal, not external."""
+    subdir = tmp_path / "src"
+    subdir.mkdir()
+    (subdir / "utils.py").write_text("def helper(): pass\n")
+    script = subdir / "main.py"
+    script.write_text("from utils import helper\nhelper()\n")
+    result = analyze_file(script, tmp_path)
+    assert "utils" in result.imports_internal
+    assert "utils" not in result.imports_external
+
+
 def test_multiple_secrets(tmp_path):
     script = tmp_path / "secrets.py"
     script.write_text("""
@@ -140,6 +152,41 @@ token = os.environ["TOKEN"]
 """)
     result = analyze_file(script, tmp_path)
     assert set(result.secrets) == {"API_KEY", "SECRET", "TOKEN"}
+
+
+def test_secrets_decouple_attribute(tmp_path):
+    script = tmp_path / "s.py"
+    script.write_text("import decouple\nkey = decouple.config('API_KEY')\n")
+    result = analyze_file(script, tmp_path)
+    assert "API_KEY" in result.secrets
+
+
+def test_secrets_decouple_import(tmp_path):
+    script = tmp_path / "s.py"
+    script.write_text("from decouple import config\nkey = config('DB_URL')\n")
+    result = analyze_file(script, tmp_path)
+    assert "DB_URL" in result.secrets
+
+
+def test_secrets_decouple_with_default(tmp_path):
+    script = tmp_path / "s.py"
+    script.write_text("from decouple import config\nport = config('PORT', default='5432')\n")
+    result = analyze_file(script, tmp_path)
+    assert "PORT" in result.secrets
+
+
+def test_secrets_decouple_variable_key_not_detected(tmp_path):
+    script = tmp_path / "s.py"
+    script.write_text("from decouple import config\nkey_name = 'MY_KEY'\nval = config(key_name)\n")
+    result = analyze_file(script, tmp_path)
+    assert "MY_KEY" not in result.secrets
+
+
+def test_secrets_config_without_decouple_not_detected(tmp_path):
+    script = tmp_path / "s.py"
+    script.write_text("val = config('SOME_KEY')\n")
+    result = analyze_file(script, tmp_path)
+    assert "SOME_KEY" not in result.secrets
 
 
 # --- Gap 4: file_io false positive tests ---
@@ -269,6 +316,19 @@ def test_io_decision_inputs(tmp_path):
     decisions = [s for s in result.steps if s.type == "decision"]
     assert len(decisions) >= 1
     assert "verbose" in decisions[0].inputs
+
+
+def test_service_attributed_via_last_segment(tmp_path):
+    """from google.cloud import storage; storage.Client() should match Google Cloud Storage."""
+    script = tmp_path / "s.py"
+    script.write_text(
+        "from google.cloud import storage\n"
+        "client = storage.Client()\n"
+        "bucket = client.get_bucket('my-bucket')\n"
+    )
+    result = analyze_file(script, tmp_path)
+    api_steps = [s for s in result.steps if s.type == "api_call" and s.service is not None]
+    assert any(s.service and "Cloud Storage" in s.service.name for s in api_steps)
 
 
 def test_hello_fixture_io(hello_script, fixtures_dir):

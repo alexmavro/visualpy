@@ -22,12 +22,17 @@ env/
 # Project — session files (never committed)
 CLAUDE.md
 status.md
-docs/PLAN-*.md
+DEFERRED.md
+docs/
+sprints/
 
 # Secrets / runtime
 .env
 *.sqlite
 *.db
+
+# Deployment config (server-specific)
+docker-compose.prod.yml
 
 # Claude Code
 .claude/

@@ -64,56 +64,56 @@ def _find_file_io_connections(
     all_scripts: list[AnalyzedScript],
     connections: list[ScriptConnection],
 ) -> None:
-    """Find scripts that share file paths (one writes, another reads)."""
-    source_files = _extract_file_paths(source_script)
-    if not source_files:
+    """Find scripts that read files written by this script."""
+    _, source_writes = _extract_file_paths(source_script)
+    if not source_writes:
         return
 
     for other in all_scripts:
         if other.path == source_script.path:
             continue
-        other_files = _extract_file_paths(other)
-        shared = source_files & other_files
-        for f in shared:
+        other_reads, _ = _extract_file_paths(other)
+        for f in source_writes & other_reads:
             connections.append(
                 ScriptConnection(
                     source=source_script.path,
                     target=other.path,
                     type="file_io",
-                    detail=f"both access {f}",
+                    detail=f"{source_script.path} writes {f}",
                 )
             )
 
 
-def _extract_file_paths(script: AnalyzedScript) -> set[str]:
-    """Extract file path strings from file_io steps.
+def _extract_file_paths(script: AnalyzedScript) -> tuple[set[str], set[str]]:
+    """Extract read and write file paths from file_io steps.
 
-    Primary: reads from step.inputs and step.outputs (structured data).
-    Fallback: parses open('path') from description strings.
+    Returns (reads, writes). Primary source is step.inputs/outputs;
+    fallback parses open('path') from descriptions and treats as both.
     """
-    paths: set[str] = set()
+    reads: set[str] = set()
+    writes: set[str] = set()
     for step in script.steps:
         if step.type != "file_io":
             continue
 
-        # Primary: structured inputs/outputs
         for p in step.inputs:
             if _looks_like_file_path(p):
-                paths.add(p)
+                reads.add(p)
         for p in step.outputs:
             if _looks_like_file_path(p):
-                paths.add(p)
+                writes.add(p)
 
-        # Fallback: parse from description (for steps without structured data)
+        # Fallback: parse from description when no structured data available.
+        # open() without a mode argument defaults to read.
         if not (step.inputs or step.outputs):
             desc = step.description
             if "open(" in desc:
                 start = desc.find("'")
                 end = desc.rfind("'")
                 if start != -1 and end > start:
-                    paths.add(desc[start + 1 : end])
+                    reads.add(desc[start + 1 : end])
 
-    return paths
+    return reads, writes
 
 
 def _looks_like_file_path(s: str) -> bool:

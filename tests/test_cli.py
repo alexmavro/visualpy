@@ -5,6 +5,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from visualpy.cli import _project_from_dict
 from visualpy.models import (
     AnalyzedProject,
@@ -70,6 +72,7 @@ def test_analyze_nonexistent_path():
     assert "Error" in result.stderr
 
 
+@pytest.mark.slow
 def test_analyze_summarize_flag(hello_script):
     """--summarize flag is accepted and summary fields are present in output."""
     result = subprocess.run(

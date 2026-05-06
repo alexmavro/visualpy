@@ -5,7 +5,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 
 Auto-visualise Python automations so that even non-dev people can understand what is going on.
-(for example when an agentic system created scripts, or a teammember, or you vibe-coded sth. and have no idea how to give feedback now.)
+(for example when an agentic system created scripts, a teammate wrote something, or you vibe-coded something and have no idea how to give feedback now.)
 
 Drop a folder of Python scripts, get a visual breakdown of what they do, how they connect, and what they need. No execution required, no config needed.
 
@@ -47,10 +47,14 @@ The result is a structured project map, viewable as JSON or as an interactive we
 
 ## Features
 
+- **Business / technical view toggle** — default view uses plain English (phases, credentials, starting scripts); toggle to the technical view for code-level detail. Both views are always available.
+- **Phase pipeline** — scripts broken into business-readable phases (Setup, Processing, Storage, Safety checks, Reporting) instead of raw function lists
 - **Project dependency graph** — see how scripts relate to each other at a glance
 - **Per-script flow diagrams** — step-by-step visual breakdown of what each file does, grouped by function
 - **Compact mode** — functions with many steps auto-collapse to readable summaries; toggle between compact and detailed views
 - **LLM summaries** — optional plain-English descriptions powered by any LLM provider via litellm (BYOK). `--summarize` flag on both `analyze` and `serve`
+- **Per-phase summaries and data flow** — with `--summarize`, each phase gets a 1-2 sentence description and the script gets a "data journey" narrative
+- **Code quality insights** — detects common issues (missing error handling, excessive print() calls, unbalanced phases) and shows a health badge per script
 - **Importance scoring** — scripts sorted by connectivity; most important scripts highlighted with a "key" badge
 - **Service and secret detection** — instantly see which external services and API keys are in play
 - **Entry point detection** — identifies scripts with `if __name__ == "__main__"`, cron triggers, webhooks, and CLI entry points
@@ -71,8 +75,9 @@ The result is a structured project map, viewable as JSON or as an interactive we
 | 4: The Voice | Done | LLM summaries (litellm, BYOK), per-script and project-level descriptions |
 | 5: The Scaling Fix | Done | Compact mode, importance scoring, compact/detailed toggle |
 | 5.5: The Demo | Done | Docker deployment, pre-baked summaries, [live demo](https://visualpy.lexi-energy.com) |
-| 6: The Translation | Next | LLM-powered step descriptions, business language UI |
-| 7: The Export | Planned | Static HTML export, summary caching, markdown export |
+| 6: The Translation | Done | Business/technical view toggle, plain-English translation engine, phase pipeline |
+| 7: The Teacher | Done | Per-phase LLM summaries, contextual step descriptions, step deduplication, data flow narrative |
+| 8: The Critic | Done | Anti-pattern detection, health scoring, code quality insights |
 
 ## Contributing
 

@@ -316,7 +316,7 @@ def pedagogical_flow(script: AnalyzedScript) -> str:
         step_word = "step" if count == 1 else "steps"
         escaped = _escape_label(label)
         node_id = f"phase_{phase_key}"
-        nodes.append((node_id, f'{node_id}["{escaped}<br/>{count} {step_word}"]:::phase_{phase_key}'))
+        nodes.append((node_id, f'{node_id}["{escaped}\n{count} {step_word}"]:::phase_{phase_key}'))
 
     lines: list[str] = ["graph LR"]
     for _, node_def in nodes:

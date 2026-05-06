@@ -5,14 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from visualpy.analyzer.ast_parser import analyze_file
+from visualpy.analyzer._constants import SKIP_DIRS as _SKIP_DIRS
+from visualpy.analyzer.ast_parser import analyze_file, collect_local_modules
 from visualpy.models import AnalyzedScript
-
-# Directories to skip during scanning
-_SKIP_DIRS = frozenset({
-    "__pycache__", ".venv", "venv", ".git", "node_modules",
-    ".tox", ".mypy_cache", ".pytest_cache", ".eggs", "dist", "build",
-})
 
 
 def scan_project(path: Path) -> list[AnalyzedScript]:
@@ -30,10 +25,11 @@ def scan_project(path: Path) -> list[AnalyzedScript]:
     if not path.is_dir():
         return []
 
+    local_modules = collect_local_modules(path)
     scripts: list[AnalyzedScript] = []
     for py_file in _find_py_files(path):
         try:
-            scripts.append(analyze_file(py_file, path))
+            scripts.append(analyze_file(py_file, path, local_modules))
         except Exception as exc:
             rel = py_file.relative_to(path) if py_file.is_relative_to(path) else py_file
             print(f"[visualpy] Warning: failed to analyze {rel}: {exc}", file=sys.stderr)

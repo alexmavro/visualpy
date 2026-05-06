@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" x-data="{ dark: localStorage.getItem('theme') === 'dark', biz: localStorage.getItem('viewMode') !== 'technical' }"
-      x-init="$watch('dark', v => { localStorage.setItem('theme', v ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', v); window.reRenderMermaid && window.reRenderMermaid(v) }); $watch('biz', v => { localStorage.setItem('viewMode', v ? 'business' : 'technical'); window.switchViewMode && window.switchViewMode(v) }); document.documentElement.classList.toggle('dark', dark)"
+<html lang="en" x-data="{ dark: localStorage.getItem('theme') === 'dark', viewMode: localStorage.getItem('viewMode') || 'business' }"
+      x-init="$watch('dark', v => { localStorage.setItem('theme', v ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', v); window.reRenderMermaid && window.reRenderMermaid(v) }); $watch('viewMode', v => { localStorage.setItem('viewMode', v); window.switchViewMode && window.switchViewMode(v === 'business') }); document.documentElement.classList.toggle('dark', dark)"
       :class="{ 'dark': dark }">
 <head>
     <meta charset="UTF-8">
@@ -27,13 +27,13 @@
                 {% block breadcrumb %}{% endblock %}
             </div>
             <div class="flex items-center gap-2">
-                <button @click="biz = !biz"
+                <button @click="viewMode = viewMode === 'business' ? 'technical' : 'business'"
                         class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200"
-                        :class="biz ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400'"
+                        :class="viewMode === 'business' ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400'"
                         id="view-toggle"
-                        :title="biz ? 'Switch to technical view' : 'Switch to business view'">
-                    <span x-show="biz" class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg> Code</span>
-                    <span x-show="!biz" class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Simple</span>
+                        :title="viewMode === 'business' ? 'Switch to technical view' : 'Switch to business view'">
+                    <span x-show="viewMode === 'business'" class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg> Code</span>
+                    <span x-show="viewMode === 'technical'" class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> Simple</span>
                 </button>
                 <button @click="dark = !dark"
                         class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"

@@ -10,20 +10,20 @@
 } %}
 
 <div class="space-y-3 text-sm"
-     x-data="{ biz: localStorage.getItem('viewMode') !== 'technical' }">
+     x-data="{ viewMode: localStorage.getItem('viewMode') || 'business' }">
     <div class="flex items-center gap-2">
         <span class="px-2 py-0.5 text-xs font-medium rounded {{ type_colors.get(step.type, 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200') }}">
-            <span x-show="biz">{{ biz_labels.get(step.type, step.type) }}</span>
-            <span x-show="!biz">{{ tech_labels.get(step.type, step.type) }}</span>
+            <span x-show="viewMode === 'business'">{{ biz_labels.get(step.type, step.type) }}</span>
+            <span x-show="viewMode === 'technical'">{{ tech_labels.get(step.type, step.type) }}</span>
         </span>
-        <span x-show="!biz" class="text-gray-400 text-xs">line {{ step.line_number }}</span>
+        <span x-show="viewMode === 'technical'" class="text-gray-400 text-xs">line {{ step.line_number }}</span>
     </div>
 
-    <p class="font-medium" x-show="biz">{{ contextual_desc or translate_step(step) }}</p>
-    <p class="font-medium" x-show="!biz">{{ step.description }}</p>
+    <p class="font-medium" x-show="viewMode === 'business'">{{ contextual_desc or translate_step(step) }}</p>
+    <p class="font-medium" x-show="viewMode === 'technical'">{{ step.description }}</p>
 
     {% if step.function_name %}
-    <p x-show="!biz" class="text-gray-500 dark:text-gray-400">
+    <p x-show="viewMode === 'technical'" class="text-gray-500 dark:text-gray-400">
         <span class="text-xs uppercase tracking-wide">Function:</span>
         <span class="font-mono">{{ step.function_name }}()</span>
     </p>
@@ -32,7 +32,7 @@
     {% if step.service %}
     <p class="text-gray-500 dark:text-gray-400">
         <span class="text-xs uppercase tracking-wide">Service:</span>
-        {{ step.service.name }}<span x-show="!biz"> ({{ step.service.library }})</span>
+        {{ step.service.name }}<span x-show="viewMode === 'technical'"> ({{ step.service.library }})</span>
     </p>
     {% endif %}
 

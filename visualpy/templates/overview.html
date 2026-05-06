@@ -7,24 +7,24 @@
     <!-- Project header -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h1 class="text-2xl font-bold mb-2">Project Overview</h1>
-        <p class="text-gray-500 dark:text-gray-400 text-sm font-mono mb-4" x-show="!biz">{{ project.path }}</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm font-mono mb-4" x-show="viewMode === 'technical'">{{ project.path }}</p>
         <div class="flex flex-wrap gap-4 text-sm">
             <span class="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
-                <span x-show="biz">{{ project.scripts|length }} automation{{ "s" if project.scripts|length != 1 }}</span>
-                <span x-show="!biz">{{ project.scripts|length }} script{{ "s" if project.scripts|length != 1 }}</span>
+                <span x-show="viewMode === 'business'">{{ project.scripts|length }} automation{{ "s" if project.scripts|length != 1 }}</span>
+                <span x-show="viewMode === 'technical'">{{ project.scripts|length }} script{{ "s" if project.scripts|length != 1 }}</span>
             </span>
             <span class="px-3 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-full">
                 {{ project.services|length }} service{{ "s" if project.services|length != 1 }}
             </span>
             {% if project.secrets %}
             <span class="px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full">
-                <span x-show="biz">{{ project.secrets|length }} credential{{ "s" if project.secrets|length != 1 }}</span>
-                <span x-show="!biz">{{ project.secrets|length }} secret{{ "s" if project.secrets|length != 1 }}</span>
+                <span x-show="viewMode === 'business'">{{ project.secrets|length }} credential{{ "s" if project.secrets|length != 1 }}</span>
+                <span x-show="viewMode === 'technical'">{{ project.secrets|length }} secret{{ "s" if project.secrets|length != 1 }}</span>
             </span>
             {% endif %}
             <span class="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full">
-                <span x-show="biz">{{ project.entry_points|length }} starting script{{ "s" if project.entry_points|length != 1 }}</span>
-                <span x-show="!biz">{{ project.entry_points|length }} entry point{{ "s" if project.entry_points|length != 1 }}</span>
+                <span x-show="viewMode === 'business'">{{ project.entry_points|length }} starting script{{ "s" if project.entry_points|length != 1 }}</span>
+                <span x-show="viewMode === 'technical'">{{ project.entry_points|length }} entry point{{ "s" if project.entry_points|length != 1 }}</span>
             </span>
         </div>
         {% if project.summary %}
@@ -35,7 +35,7 @@
     <!-- Project graph (only when multiple scripts with connections) -->
     {% if project.scripts|length > 1 %}
     <!-- Business view: collapsed graph -->
-    <details x-show="biz" class="bg-white dark:bg-gray-800 rounded-lg shadow">
+    <details x-show="viewMode === 'business'" class="bg-white dark:bg-gray-800 rounded-lg shadow">
         <summary class="p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition rounded-lg flex items-center justify-between">
             <span class="text-lg font-semibold">How Scripts Connect</span>
             <span class="text-sm text-gray-400">(click to expand)</span>
@@ -56,7 +56,7 @@
     </details>
 
     <!-- Technical view: full graph -->
-    <div x-show="!biz" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div id="tech-graph-container" x-show="viewMode === 'technical'" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h2 class="text-lg font-semibold mb-2">Dependency Graph</h2>
         <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">Click a script to see its flow</p>
         <script id="graph-tech" type="text/plain">{{ graph }}</script>
@@ -110,7 +110,7 @@
                 <li class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
                     <span class="font-medium">{{ svc.name }}</span>
-                    <span x-show="!biz" class="text-gray-400">{{ svc.library }}</span>
+                    <span x-show="viewMode === 'technical'" class="text-gray-400">{{ svc.library }}</span>
                 </li>
                 {% endfor %}
             </ul>
@@ -120,12 +120,12 @@
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h2 class="text-lg font-semibold mb-3">
-                <span x-show="biz">Credentials</span>
-                <span x-show="!biz">Secrets</span>
+                <span x-show="viewMode === 'business'">Credentials</span>
+                <span x-show="viewMode === 'technical'">Secrets</span>
             </h2>
             {% if project.secrets %}
             <!-- Business view: deduplicated labels -->
-            <ul x-show="biz" class="space-y-1 text-sm">
+            <ul x-show="viewMode === 'business'" class="space-y-1 text-sm">
                 {% set seen_biz = [] %}
                 {% for secret in project.secrets %}
                 {% set label_biz = translate_secret(secret) %}
@@ -139,7 +139,7 @@
                 {% endfor %}
             </ul>
             <!-- Technical view: all raw env var names -->
-            <ul x-show="!biz" class="space-y-1 text-sm">
+            <ul x-show="viewMode === 'technical'" class="space-y-1 text-sm">
                 {% for secret in project.secrets %}
                 <li class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span>
@@ -164,7 +164,7 @@ window.switchViewMode = async function(isBiz) {
     }
     if (!isBiz) {
         var src = document.getElementById('graph-tech');
-        var el = document.querySelector('[x-show="!biz"] .mermaid');
+        var el = document.querySelector('#tech-graph-container .mermaid');
         if (src && el) {
             var code = src.textContent.trim();
             el.setAttribute('data-mermaid-src', code);

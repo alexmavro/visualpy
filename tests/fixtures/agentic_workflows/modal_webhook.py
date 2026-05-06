@@ -48,11 +48,11 @@ image = (
         "python-dotenv",
         "yt-dlp",  # For YouTube video scraping
     )
-    .add_local_dir("/Users/nicksaraev/Example Workspace/directives", remote_path="/app/directives")
-    .add_local_dir("/Users/nicksaraev/Example Workspace/execution", remote_path="/app/execution")
-    .add_local_file("/Users/nicksaraev/Example Workspace/execution/webhooks.json", remote_path="/app/webhooks.json")
-    .add_local_file("/Users/nicksaraev/Example Workspace/.tmp/demo_kickoff_call_transcript.md", remote_path="/app/demo_kickoff_call_transcript.md")
-    .add_local_file("/Users/nicksaraev/Example Workspace/.tmp/demo_sales_call_transcript.md", remote_path="/app/demo_sales_call_transcript.md")
+    .add_local_dir("./workspace/directives", remote_path="/app/directives")
+    .add_local_dir("./workspace/execution", remote_path="/app/execution")
+    .add_local_file("./workspace/execution/webhooks.json", remote_path="/app/webhooks.json")
+    .add_local_file("./workspace/.tmp/demo_kickoff_call_transcript.md", remote_path="/app/demo_kickoff_call_transcript.md")
+    .add_local_file("./workspace/.tmp/demo_sales_call_transcript.md", remote_path="/app/demo_sales_call_transcript.md")
 )
 
 # All secrets
@@ -480,7 +480,7 @@ def create_proposal_impl(client: dict, project: dict) -> dict:
     if not API_KEY:
         return {"error": "PANDADOC_API_KEY not configured"}
 
-    TEMPLATE_UUID = "G8GhAvKGa9D8dmpwTnEWyV"
+    TEMPLATE_UUID = "your-template-uuid"
     API_URL = "https://api.pandadoc.com/public/v1/documents"
 
     problems = project.get("problems", {})
@@ -501,7 +501,7 @@ def create_proposal_impl(client: dict, project: dict) -> dict:
         {"name": "Personalization.Project.Benefit.02", "value": benefits.get("benefit02", "")},
         {"name": "Personalization.Project.Benefit.03", "value": benefits.get("benefit03", "")},
         {"name": "Personalization.Project.Benefit.04", "value": benefits.get("benefit04", "")},
-        {"name": "Slide.Footer", "value": f"{client.get('company', 'Client')} x LeftClick"},
+        {"name": "Slide.Footer", "value": f"{client.get('company', 'Client')} x YourCompany"},
         {"name": "Document.CreatedDate", "value": datetime.utcnow().strftime("%B %d, %Y")},
     ]
 
@@ -1858,7 +1858,7 @@ def generate_proposal(request_body: dict = None):
         if not API_KEY:
             raise ValueError("PANDADOC_API_KEY not configured")
 
-        TEMPLATE_UUID = "G8GhAvKGa9D8dmpwTnEWyV"
+        TEMPLATE_UUID = "your-template-uuid"
         API_URL = "https://api.pandadoc.com/public/v1/documents"
 
         client = request_body.get("client", {})
@@ -1881,7 +1881,7 @@ def generate_proposal(request_body: dict = None):
             {"name": "Personalization.Project.Benefit.02", "value": benefits.get("benefit02", "")},
             {"name": "Personalization.Project.Benefit.03", "value": benefits.get("benefit03", "")},
             {"name": "Personalization.Project.Benefit.04", "value": benefits.get("benefit04", "")},
-            {"name": "Slide.Footer", "value": f"{client.get('company', 'Client')} x LeftClick"},
+            {"name": "Slide.Footer", "value": f"{client.get('company', 'Client')} x YourCompany"},
             {"name": "Document.CreatedDate", "value": datetime.utcnow().strftime("%B %d, %Y")},
         ]
 
@@ -2087,7 +2087,7 @@ Return ONLY the JSON, no markdown code blocks or explanations."""
         if not API_KEY:
             raise ValueError("PANDADOC_API_KEY not configured")
 
-        TEMPLATE_UUID = "G8GhAvKGa9D8dmpwTnEWyV"
+        TEMPLATE_UUID = "your-template-uuid"
         API_URL = "https://api.pandadoc.com/public/v1/documents"
 
         client_info = extracted_data.get("client", {})
@@ -2110,7 +2110,7 @@ Return ONLY the JSON, no markdown code blocks or explanations."""
             {"name": "Personalization.Project.Benefit.02", "value": benefits.get("benefit02", "")},
             {"name": "Personalization.Project.Benefit.03", "value": benefits.get("benefit03", "")},
             {"name": "Personalization.Project.Benefit.04", "value": benefits.get("benefit04", "")},
-            {"name": "Slide.Footer", "value": f"{client_info.get('company', 'Client')} x LeftClick"},
+            {"name": "Slide.Footer", "value": f"{client_info.get('company', 'Client')} x YourCompany"},
             {"name": "Document.CreatedDate", "value": datetime.utcnow().strftime("%B %d, %Y")},
         ]
 

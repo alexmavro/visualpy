@@ -144,15 +144,20 @@ def create_app(project: AnalyzedProject) -> FastAPI:
                 print(f"[visualpy] Warning: failed to build {label} flow for {path}: {exc}", file=sys.stderr)
                 return _FLOW_FALLBACK
 
-        flow_detailed = _gen_flow()
-        flow_compact = _gen_flow(compact=True)
+        flows: dict[str, str] = {}
+        for name, kwargs in [
+            ("flow_detailed", {}),
+            ("flow_compact", {"compact": True}),
+            ("flow_detailed_biz", {"business": True}),
+            ("flow_compact_biz", {"compact": True, "business": True}),
+        ]:
+            flows[name] = _gen_flow(**kwargs)
+
         # Business flows fall back to their technical counterparts on error.
-        flow_detailed_biz = _gen_flow(business=True)
-        if flow_detailed_biz == _FLOW_FALLBACK:
-            flow_detailed_biz = flow_detailed
-        flow_compact_biz = _gen_flow(compact=True, business=True)
-        if flow_compact_biz == _FLOW_FALLBACK:
-            flow_compact_biz = flow_compact
+        if flows["flow_detailed_biz"] == _FLOW_FALLBACK:
+            flows["flow_detailed_biz"] = flows["flow_detailed"]
+        if flows["flow_compact_biz"] == _FLOW_FALLBACK:
+            flows["flow_compact_biz"] = flows["flow_compact"]
 
         # Pedagogical flow: simple phase pipeline for business view.
         try:
@@ -175,11 +180,11 @@ def create_app(project: AnalyzedProject) -> FastAPI:
             context={
                 "project": project,
                 "script": script,
-                "flow": flow_compact if total_steps > 30 else flow_detailed,
-                "flow_detailed": flow_detailed,
-                "flow_compact": flow_compact,
-                "flow_detailed_biz": flow_detailed_biz,
-                "flow_compact_biz": flow_compact_biz,
+                "flow": flows["flow_compact"] if total_steps > 30 else flows["flow_detailed"],
+                "flow_detailed": flows["flow_detailed"],
+                "flow_compact": flows["flow_compact"],
+                "flow_detailed_biz": flows["flow_detailed_biz"],
+                "flow_compact_biz": flows["flow_compact_biz"],
                 "flow_pedagogical": flow_pedagogical,
                 "phase_groups": phase_groups,
                 "phase_summaries": script.phase_summaries or {},

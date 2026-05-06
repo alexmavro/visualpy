@@ -39,8 +39,8 @@ def test_file_io_connection(tmp_path):
     connections = resolve_connections(scripts, tmp_path)
 
     io_conns = [c for c in connections if c.type == "file_io"]
-    assert len(io_conns) >= 1
-    assert any("data.csv" in c.detail for c in io_conns)
+    assert len(io_conns) == 1
+    assert "data.csv" in io_conns[0].detail
 
 
 def test_no_self_connections(tmp_path):
@@ -64,8 +64,33 @@ def test_file_io_connection_via_structured_io(tmp_path):
     connections = resolve_connections(scripts, tmp_path)
 
     io_conns = [c for c in connections if c.type == "file_io"]
-    assert len(io_conns) >= 1
-    assert any("shared.csv" in c.detail for c in io_conns)
+    assert len(io_conns) == 1
+    assert "shared.csv" in io_conns[0].detail
+
+
+def test_file_io_connection_direction(tmp_path):
+    """Writer is the source, reader is the target — not reversed."""
+    (tmp_path / "writer.py").write_text("f = open('out.csv', 'w')\n")
+    (tmp_path / "reader.py").write_text("f = open('out.csv', 'r')\n")
+
+    scripts = scan_project(tmp_path)
+    connections = resolve_connections(scripts, tmp_path)
+
+    io_conns = [c for c in connections if c.type == "file_io"]
+    assert len(io_conns) == 1
+    assert io_conns[0].source.endswith("writer.py")
+    assert io_conns[0].target.endswith("reader.py")
+
+
+def test_file_io_no_connection_when_both_only_read(tmp_path):
+    """Two readers of the same file produce no connection — nobody writes it."""
+    (tmp_path / "reader_a.py").write_text("f = open('shared.csv', 'r')\n")
+    (tmp_path / "reader_b.py").write_text("f = open('shared.csv', 'r')\n")
+
+    scripts = scan_project(tmp_path)
+    connections = resolve_connections(scripts, tmp_path)
+
+    assert not any(c.type == "file_io" for c in connections)
 
 
 def test_deduplication(tmp_path):
